@@ -1,0 +1,27 @@
+# Simulation output
+simv
+simv.daidir/
+csrc/
+sim/
+*.log
+*.vpd
+ucli.key
+*.jou
+*.pb
+
+# Vivado
+*.backup.jou
+*.backup.log
+.jou
+.log
+*.str
+
+# OS
+.DS_Store
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
