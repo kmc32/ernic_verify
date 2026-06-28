@@ -63,12 +63,12 @@
 `define QPCONF_QP_RECOVERY           (1 << 6)   // [6]: QP under recovery
 `define QPCONF_IP_VER                (1 << 7)   // [7]: IPv4=0, IPv6=1
 
-// PMTU values for QPCONF[10:8]
-`define PMTU_256B                    (3'b000 << 8)
-`define PMTU_512B                    (3'b001 << 8)
-`define PMTU_1024B                   (3'b010 << 8)
-`define PMTU_2048B                   (3'b011 << 8)
-`define PMTU_4096B                   (3'b100 << 8)
+// PMTU values for QPCONF[10:8] — 3-bit field, place directly at bits [10:8]
+`define PMTU_256B                    3'b000
+`define PMTU_512B                    3'b001
+`define PMTU_1024B                   3'b010
+`define PMTU_2048B                   3'b011
+`define PMTU_4096B                   3'b100
 
 // WQE opcodes (Table 2-1)
 `define WQE_OP_RDMA_WRITE            8'h00

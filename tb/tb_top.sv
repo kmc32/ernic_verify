@@ -76,14 +76,23 @@ module tb_top;
     logic [63:0]  tie_s_axis_tkeep = 64'b0;
     logic         tie_s_axis_tlast = 1'b0;
 
-    // Handshake tie-offs (PIDB/CIDB now driven actively, see below)
-    logic        tie_resp_hndler_i_send_cq_db_rdy = 1'b0;
+    // Handshake tie-offs — drive ready signals high so ERNIC's internal
+    // pipelines can complete their handshakes. With these at 0, ERNIC stalls
+    // after WQE fetch (the response handler blocks on CQ DB acknowledgment).
+    logic        tie_resp_hndler_i_send_cq_db_rdy = 1'b1;
     logic [15:0] tie_i_qp_rq_cidb_hndshk = 16'b0;
     logic [31:0] tie_i_qp_rq_cidb_wr_addr_hndshk = 32'b0;
     logic        tie_i_qp_rq_cidb_wr_valid_hndshk = 1'b0;
-    logic        tie_rx_pkt_hndler_i_rq_db_rdy = 1'b0;
+    logic        tie_rx_pkt_hndler_i_rq_db_rdy = 1'b1;
     logic        tie_ieth_immdt_axis_trdy = 1'b1;  // must be 1 (example design)
     logic [8:0]  tie_stat_rx_pause_req = 9'b0;
+
+    // Debug probe wires (for TX-side diagnostic)
+    wire        dbg_cq_db_cnt_valid;
+    wire        dbg_rq_db_data_valid;
+    wire        dbg_ieth_tvalid;
+    wire        dbg_rnic_intr;
+    wire        dbg_system_resetn;
 
     // SQ PIDB doorbell generator (driven on AXI-Lite write to DOORBELL)
     logic [15:0] pidb_hndshk;
@@ -110,7 +119,7 @@ module tb_top;
         .cmac_tx_rst                 (~rst_n),
         .m_axi_aresetn               (rst_n),
         .s_axi_lite_aresetn          (rst_n),
-        .system_resetn               (),         // output, unused
+        .system_resetn               (dbg_system_resetn),
 
         // ============================================================
         // AXI-Lite CSR (slave)
@@ -381,7 +390,7 @@ module tb_top;
         // ============================================================
         // Handshake / debug interfaces — tied off
         // ============================================================
-        .resp_hndler_o_send_cq_db_cnt_valid (),
+        .resp_hndler_o_send_cq_db_cnt_valid (dbg_cq_db_cnt_valid),
         .resp_hndler_o_send_cq_db_addr      (),
         .resp_hndler_o_send_cq_db_cnt       (),
         .resp_hndler_i_send_cq_db_rdy       (tie_resp_hndler_i_send_cq_db_rdy),
@@ -398,14 +407,14 @@ module tb_top;
 
         .rx_pkt_hndler_o_rq_db_data        (),
         .rx_pkt_hndler_o_rq_db_addr        (),
-        .rx_pkt_hndler_o_rq_db_data_valid  (),
+        .rx_pkt_hndler_o_rq_db_data_valid  (dbg_rq_db_data_valid),
         .rx_pkt_hndler_i_rq_db_rdy         (tie_rx_pkt_hndler_i_rq_db_rdy),
 
-        .rnic_intr                   (),
+        .rnic_intr                   (dbg_rnic_intr),
         .stat_rx_pause_req           (tie_stat_rx_pause_req),
         .ctl_tx_pause_req            (),
         .ctl_tx_resend_pause         (),
-        .ieth_immdt_axis_tvalid      (),
+        .ieth_immdt_axis_tvalid      (dbg_ieth_tvalid),
         .ieth_immdt_axis_tlast       (),
         .ieth_immdt_axis_tdata       (),
         .ieth_immdt_axis_trdy        (tie_ieth_immdt_axis_trdy),
@@ -444,6 +453,21 @@ module tb_top;
     // ----------------------------------------------------------------
     assign net_tx.tready = 1'b1;
 
+    // Debug: log full TX beats, PIDB doorbell, and CQ DB so it's easy to see
+    // whether ERNIC consumed the WQE and where TX (if any) lands.
+    int tx_beat_n = 0;
+    always @(posedge clk) begin
+        if (net_tx.tvalid && net_tx.tready) begin
+            $display("[%0t] TX_BEAT%0d tlast=%0b tkeep=0x%016h",
+                     $time, tx_beat_n, net_tx.tlast, net_tx.tkeep);
+            tx_beat_n = net_tx.tlast ? 0 : tx_beat_n + 1;
+        end
+        if (pidb_valid && pidb_rdy)
+            $display("[%0t] PIDB_FIRE addr=0x%08h data=0x%04h", $time, pidb_wr_addr, pidb_hndshk);
+        if (dbg_cq_db_cnt_valid)
+            $display("[%0t] CQ_DB cnt_valid", $time);
+    end
+
     // ----------------------------------------------------------------
     // TX-to-RX loopback (matching example design architecture)
     // ERNIC TX output loops back to ERNIC RX input so the IP can
@@ -456,14 +480,14 @@ module tb_top;
     assign net_rx.tuser  = 1'b0;
 
     // ERNIC system_resetn — pull up (output may be open-drain)
-    pullup (dut.system_resetn);
+    pullup (dbg_system_resetn);
 
     // ----------------------------------------------------------------
-    // PIDB doorbell generator — DISABLED (tied to 0 like example design).
-    // The ERNIC receives doorbell notifications through AXI-Lite CSR
-    // writes to the SQPI register, not through the native PIDB interface.
+    // PIDB doorbell generator — bridges AXI-Lite SQPI writes (offset 0x38
+    // within per-QP space at 0x0018_xxxx) to ERNIC's native PIDB handshake.
+    // Required when QPCONF[4]=0 (HW handshake enabled) — otherwise ERNIC
+    // never receives a doorbell and never produces TX.
     // ----------------------------------------------------------------
-    /*
     logic [31:0] db_pidb_addr;
     logic [15:0] db_pidb_data;
     logic        db_pidb_pend;
@@ -480,7 +504,6 @@ module tb_top;
         if (csr_if.awvalid && csr_if.awready &&
             csr_if.awaddr[7:0] == 8'h38 &&
             csr_if.awaddr[23:16] == 8'h18) begin
-            automatic logic [10:0] qpn = {3'h0, csr_if.awaddr[15:8]} + 11'd1;
             db_pidb_addr <= csr_if.awaddr;
             db_pidb_data <= csr_if.wdata[15:0];
             db_pidb_pend <= 1'b1;
@@ -499,11 +522,5 @@ module tb_top;
             pidb_valid   <= 1'b0;
         end
     end
-    */
-
-    // PIDB signals tied to 0 (matching example design)
-    assign pidb_hndshk  = 16'b0;
-    assign pidb_wr_addr = 32'b0;
-    assign pidb_valid   = 1'b0;
 
 endmodule

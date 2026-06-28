@@ -54,16 +54,22 @@ class rdma_write_seq extends ernic_base_seq;
         byte unsigned wqe_bytes[];
         bit [15:0] pi;
 
-        // Build WQE using << (AXI4 little-endian) — correct struct→beat mapping.
-        // Try SEND opcode which may follow a simpler TX path than RDMA_WRITE.
+        // Build WQE. Mixed-endian layout (per Xilinx ref design):
+        //   - LADDR and LENGTH are numeric DMA parameters → store native LE
+        //     so axi_data[X] reads back the original numeric value
+        //   - ROFFSET / RTAG / IMMDT are copied straight to RoCE header bytes →
+        //     store byte-reversed so wire byte 0 == high byte of value
+        //   - OPCODE is 1 byte, order N/A
+        // The whole struct is then dumped to memory with {<<byte{}} (AXI4 LE).
         wqe = '0;
         wqe.wrid       = 16'h0;
-        wqe.opcode     = `WQE_OP_SEND;  // SEND instead of RDMA_WRITE
-        wqe.rtag       = rkey;
-        wqe.roffset    = remote_addr;
+        wqe.opcode     = `WQE_OP_SEND;
+        wqe.rtag       = {<<8{rkey}};
+        wqe.roffset    = {<<8{remote_addr}};
         wqe.laddr      = local_addr;
-        wqe.length     = length;
-        wqe.sdata      = 128'hAABBCCDD_00112233_44556677_8899AABB; // test data
+        wqe.length     = length;  // native LE
+        wqe.sdata      = 128'hAABBCCDD_00112233_44556677_8899AABB;
+        wqe.immdt_data = 32'h0;
         wqe_bytes = {<<byte{wqe}};
         mem_model.backdoor_write(sq_addr, wqe_bytes);
 

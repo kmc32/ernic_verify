@@ -45,16 +45,19 @@ class send_recv_seq extends ernic_base_seq;
         byte unsigned b[];
         bit [15:0]    pi;
 
-        // Post SEND WQE on SQ
+        // Build WQE. Mixed-endian per Xilinx ERNIC convention:
+        //   - LADDR / LENGTH consumed by ERNIC's own AXI4 master → native LE
+        //   - OPCODE 1 byte
+        // Whole struct goes to memory via {<<byte{}} (AXI4 LE).
         sq_wqe = '0;
-        sq_wqe.wrid     = 16'h0;
-        sq_wqe.laddr    = send_buf;
-        sq_wqe.length   = length;
-        sq_wqe.opcode   = with_imm ? `WQE_OP_SEND_WITH_IMM : `WQE_OP_SEND;
-        sq_wqe.immdt_data = with_imm ? imm_data : 32'h0;
+        sq_wqe.wrid       = 16'h0;
+        sq_wqe.laddr      = send_buf;
+        sq_wqe.length     = length;
+        sq_wqe.opcode     = with_imm ? `WQE_OP_SEND_WITH_IMM : `WQE_OP_SEND;
+        sq_wqe.immdt_data = with_imm ? {<<8{imm_data}} : 32'h0;
 
         // Write WQE into SQ memory via backdoor
-        b = {<<byte{sq_wqe}};  // AXI4 little-endian: LSB at lowest addr
+        b = {<<byte{sq_wqe}};  // AXI4 little-endian byte storage
         mem_model.backdoor_write(sq_addr, b);
 
         // Ring doorbell: increment SQ Producer Index and write to SQPI register

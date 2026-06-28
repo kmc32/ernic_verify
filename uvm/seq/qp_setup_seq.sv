@@ -90,36 +90,47 @@ class qp_setup_seq extends ernic_base_seq;
         csr_write(qp_base + `ERNIC_QP_SQPSN,    24'h0);
         csr_write(qp_base + `ERNIC_QP_LSTRQREQ, 32'h0);
 
+        // 5a. Protection Domain number (per-QP, offset 0xB0) — required
+        csr_write(qp_base + `ERNIC_QP_PDNUM, 24'h0);
+
         // 6. Timeout configuration
         // [5:0]=timeout, [10:8]=max_retry(7), [13:11]=RNR retry(7), [20:16]=RNR timeout(0x12)
-        csr_write(qp_base + `ERNIC_QP_TIMEOUTCONF, {11'h0, 5'h12, 3'h7, 3'h7, 2'h0, 6'h12});
+        // 32-bit value: 11+5+3+3+2+6+2 = 32 bits
+        csr_write(qp_base + `ERNIC_QP_TIMEOUTCONF, {11'h0, 5'h12, 3'h7, 3'h7, 2'h0, 6'h12, 2'h0});
 
-        // 7. QP Advanced config (traffic class, TTL, partition key)
-        csr_write(qp_base + `ERNIC_QP_QPADVCONF, 32'h0);  // defaults
+        // 7. QP Advanced config — partition key 0xFFFF (default), TTL 64
+        // [15:0]=PKey, [23:16]=TTL, [31:24]=Traffic Class
+        csr_write(qp_base + `ERNIC_QP_QPADVCONF, 32'h0040_FFFF);
 
         // 8. Build and write QPCONF:
         //    [31:16] = RQ buffer size in 256B multiples
-        //    [10:8]  = PMTU (011 = 2048B)
+        //    [10:8]  = PMTU (3-bit field, 011 = 2048B)
         //    [7]     = 0 (IPv4)
         //    [4]     = 0 (HW handshake enabled)
+        //    [3]     = 1 (CQ int enable)
+        //    [2]     = 1 (RQ int enable)
         //    [0]     = 1 (QP enable)
-        qpconf_val = {rq_buf_size[15:0], 13'h0, `PMTU_2048B, 4'h0, 1'b1};
+        // 32-bit value: 16+5+3+4+3+1 = 32 bits
+        qpconf_val = {rq_buf_size[15:0], 5'h0, `PMTU_2048B, 4'h0, 3'b110, 1'b1};
         csr_write(qp_base + `ERNIC_QP_QPCONF, qpconf_val);
 
         // 9. Write retry data buffer config (needed for outgoing WRITE)
+        // DATBUFSZ: [31:16]=buf size in bytes, [15:0]=#bufs — must be >= PMTU
         csr_write(`ERNIC_DATBUFBA,    32'h8000_0000);  // data buffer base
         csr_write(`ERNIC_DATBUFBAMSB, 32'h0);
-        csr_write(`ERNIC_DATBUFSZ,    {16'd256, 16'd1024});  // 256 buffers x 1KB each
+        csr_write(`ERNIC_DATBUFSZ,    {16'd4096, 16'd128});  // 128 buffers x 4KB each
 
-        // 10. Error buffer (optional but recommended)
-        csr_write(`ERNIC_ERRBUFBA,    32'hA000_0000);
+        // 10. Error buffer (optional but recommended) — keep away from doorbell range
+        csr_write(`ERNIC_ERRBUFBA,    32'hB000_0000);
         csr_write(`ERNIC_ERRBUFBAMSB, 32'h0);
         csr_write(`ERNIC_ERRBUFSZ,    {16'd256, 16'd256});  // 256 entries x 256B each
 
         // 11. Enable ERNIC globally (XRNICCONF[0]=1, UDP src port=0x4791)
-        csr_write(`ERNIC_XRNICCONF, {8'h0, 16'h4791, 5'h0, 2'b00, 1'b0, 1'b1});
+        // 32-bit value: 8+16+5+2+1 = 32 bits — bit[0]=1 enable, [23:8]=UDP src port
+        csr_write(`ERNIC_XRNICCONF, {8'h0, 16'h4791, 5'h0, 2'b00, 1'b1});
 
-        // Final commit trigger (matching example design pattern)
+        // 12. Final commit triggers — ERNIC latches configuration after these writes
+        csr_write(32'h00100044, 32'h00000007);
         csr_write(32'h00100044, 32'h00000007);
 
         `uvm_info("QP_SETUP", $sformatf("QP%0d configured at base 0x%08h", qpn, qp_base), UVM_MEDIUM)
