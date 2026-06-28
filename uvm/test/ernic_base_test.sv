@@ -18,9 +18,10 @@ class ernic_base_test extends uvm_test;
         return env.csr_agt.sequencer;
     endfunction
 
-    task setup_qp(int unsigned qpn,
+    // Setup one QP (1-based QP number, QP2+ for RC QPs)
+    task setup_qp(int unsigned qpn = 2,
                   bit [31:0] dst_ip = 32'hC0A80002,
-                  int unsigned dst_qpn = 1);
+                  int unsigned dst_qpn = 3);
         qp_setup_seq seq = qp_setup_seq::type_id::create("qp_setup");
         seq.qpn     = qpn;
         seq.dst_ip  = dst_ip;

@@ -49,7 +49,10 @@ module tb_top;
     axis_if      #(.DW(512))            net_tx  (.clk(clk), .rst_n(rst_n));  // ERNIC -> network
     axis_if      #(.DW(512))            net_rx  (.clk(clk), .rst_n(rst_n));  // network -> ERNIC
     // ERNIC AXI4 masters use 32-bit addresses; pad to 64-bit for UVM env
-    axi4_if      #(.AW(64), .DW(512))   mem_if  (.clk(clk), .rst_n(rst_n));
+    axi4_if      #(.AW(64), .DW(512))   mem_if      (.clk(clk), .rst_n(rst_n));
+    axi4_if      #(.AW(64), .DW(512))   wqe_mem_if  (.clk(clk), .rst_n(rst_n));
+    axi4_if      #(.AW(64), .DW(512))   qp_mem_if   (.clk(clk), .rst_n(rst_n));
+    axi4_if      #(.AW(64), .DW(512))   resp_mem_if (.clk(clk), .rst_n(rst_n));
 
     // ----------------------------------------------------------------
     // ERNIC v4.0 tie-off wires for unused ports
@@ -73,17 +76,20 @@ module tb_top;
     logic [63:0]  tie_s_axis_tkeep = 64'b0;
     logic         tie_s_axis_tlast = 1'b0;
 
-    // Handshake tie-offs
+    // Handshake tie-offs (PIDB/CIDB now driven actively, see below)
     logic        tie_resp_hndler_i_send_cq_db_rdy = 1'b0;
     logic [15:0] tie_i_qp_rq_cidb_hndshk = 16'b0;
     logic [31:0] tie_i_qp_rq_cidb_wr_addr_hndshk = 32'b0;
     logic        tie_i_qp_rq_cidb_wr_valid_hndshk = 1'b0;
-    logic [15:0] tie_i_qp_sq_pidb_hndshk = 16'b0;
-    logic [31:0] tie_i_qp_sq_pidb_wr_addr_hndshk = 32'b0;
-    logic        tie_i_qp_sq_pidb_wr_valid_hndshk = 1'b0;
     logic        tie_rx_pkt_hndler_i_rq_db_rdy = 1'b0;
     logic        tie_ieth_immdt_axis_trdy = 1'b0;
     logic [8:0]  tie_stat_rx_pause_req = 9'b0;
+
+    // SQ PIDB doorbell generator (driven on AXI-Lite write to DOORBELL)
+    logic [15:0] pidb_hndshk;
+    logic [31:0] pidb_wr_addr;
+    logic        pidb_valid;
+    logic        pidb_rdy;
 
     // ----------------------------------------------------------------
     // DUT — Xilinx ERNIC v4.0
@@ -232,120 +238,120 @@ module tb_top;
         .rx_pkt_hndler_rdrsp_m_axi_arlock  (),
 
         // ============================================================
-        // Unused AXI4 master: WQE processor
+        // AXI4 master: WQE processor — connected to shared memory
         // ============================================================
-        .wqe_proc_top_m_axi_awid    (),
-        .wqe_proc_top_m_axi_awaddr  (),
-        .wqe_proc_top_m_axi_awlen   (),
-        .wqe_proc_top_m_axi_awsize  (),
-        .wqe_proc_top_m_axi_awburst (),
+        .wqe_proc_top_m_axi_awid    (wqe_mem_if.awid[0]),
+        .wqe_proc_top_m_axi_awaddr  (wqe_mem_if.awaddr[31:0]),
+        .wqe_proc_top_m_axi_awlen   (wqe_mem_if.awlen),
+        .wqe_proc_top_m_axi_awsize  (wqe_mem_if.awsize),
+        .wqe_proc_top_m_axi_awburst (wqe_mem_if.awburst),
         .wqe_proc_top_m_axi_awcache (),
         .wqe_proc_top_m_axi_awprot  (),
-        .wqe_proc_top_m_axi_awvalid (),
-        .wqe_proc_top_m_axi_awready (tie_awready),
-        .wqe_proc_top_m_axi_wdata   (),
-        .wqe_proc_top_m_axi_wstrb   (),
-        .wqe_proc_top_m_axi_wlast   (),
-        .wqe_proc_top_m_axi_wvalid  (),
-        .wqe_proc_top_m_axi_wready  (tie_wready),
+        .wqe_proc_top_m_axi_awvalid (wqe_mem_if.awvalid),
+        .wqe_proc_top_m_axi_awready (wqe_mem_if.awready),
+        .wqe_proc_top_m_axi_wdata   (wqe_mem_if.wdata),
+        .wqe_proc_top_m_axi_wstrb   (wqe_mem_if.wstrb),
+        .wqe_proc_top_m_axi_wlast   (wqe_mem_if.wlast),
+        .wqe_proc_top_m_axi_wvalid  (wqe_mem_if.wvalid),
+        .wqe_proc_top_m_axi_wready  (wqe_mem_if.wready),
         .wqe_proc_top_m_axi_awlock  (),
-        .wqe_proc_top_m_axi_bid     (tie_bid),
-        .wqe_proc_top_m_axi_bresp   (tie_bresp),
-        .wqe_proc_top_m_axi_bvalid  (tie_bvalid),
-        .wqe_proc_top_m_axi_bready  (),
-        .wqe_proc_top_m_axi_arid    (),
-        .wqe_proc_top_m_axi_araddr  (),
-        .wqe_proc_top_m_axi_arlen   (),
-        .wqe_proc_top_m_axi_arsize  (),
-        .wqe_proc_top_m_axi_arburst (),
+        .wqe_proc_top_m_axi_bid     (wqe_mem_if.bid[0]),
+        .wqe_proc_top_m_axi_bresp   (wqe_mem_if.bresp),
+        .wqe_proc_top_m_axi_bvalid  (wqe_mem_if.bvalid),
+        .wqe_proc_top_m_axi_bready  (wqe_mem_if.bready),
+        .wqe_proc_top_m_axi_arid    (wqe_mem_if.arid[0]),
+        .wqe_proc_top_m_axi_araddr  (wqe_mem_if.araddr[31:0]),
+        .wqe_proc_top_m_axi_arlen   (wqe_mem_if.arlen),
+        .wqe_proc_top_m_axi_arsize  (wqe_mem_if.arsize),
+        .wqe_proc_top_m_axi_arburst (wqe_mem_if.arburst),
         .wqe_proc_top_m_axi_arcache (),
         .wqe_proc_top_m_axi_arprot  (),
-        .wqe_proc_top_m_axi_arvalid (),
-        .wqe_proc_top_m_axi_arready (tie_arready),
-        .wqe_proc_top_m_axi_rid     (tie_rid),
-        .wqe_proc_top_m_axi_rdata   (tie_rdata),
-        .wqe_proc_top_m_axi_rresp   (tie_rresp),
-        .wqe_proc_top_m_axi_rlast   (tie_rlast),
-        .wqe_proc_top_m_axi_rvalid  (tie_rvalid),
-        .wqe_proc_top_m_axi_rready  (),
+        .wqe_proc_top_m_axi_arvalid (wqe_mem_if.arvalid),
+        .wqe_proc_top_m_axi_arready (wqe_mem_if.arready),
+        .wqe_proc_top_m_axi_rid     (wqe_mem_if.rid[0]),
+        .wqe_proc_top_m_axi_rdata   (wqe_mem_if.rdata),
+        .wqe_proc_top_m_axi_rresp   (wqe_mem_if.rresp),
+        .wqe_proc_top_m_axi_rlast   (wqe_mem_if.rlast),
+        .wqe_proc_top_m_axi_rvalid  (wqe_mem_if.rvalid),
+        .wqe_proc_top_m_axi_rready  (wqe_mem_if.rready),
         .wqe_proc_top_m_axi_arlock  (),
 
         // ============================================================
-        // Unused AXI4 master: Response handler
+        // AXI4 master: Response handler — connected to shared memory
         // ============================================================
-        .resp_hndler_m_axi_awid    (),
-        .resp_hndler_m_axi_awaddr  (),
-        .resp_hndler_m_axi_awlen   (),
-        .resp_hndler_m_axi_awsize  (),
-        .resp_hndler_m_axi_awburst (),
+        .resp_hndler_m_axi_awid    (resp_mem_if.awid[0]),
+        .resp_hndler_m_axi_awaddr  (resp_mem_if.awaddr[31:0]),
+        .resp_hndler_m_axi_awlen   (resp_mem_if.awlen),
+        .resp_hndler_m_axi_awsize  (resp_mem_if.awsize),
+        .resp_hndler_m_axi_awburst (resp_mem_if.awburst),
         .resp_hndler_m_axi_awcache (),
         .resp_hndler_m_axi_awprot  (),
-        .resp_hndler_m_axi_awvalid (),
-        .resp_hndler_m_axi_awready (tie_awready),
-        .resp_hndler_m_axi_wdata   (),
-        .resp_hndler_m_axi_wstrb   (),
-        .resp_hndler_m_axi_wlast   (),
-        .resp_hndler_m_axi_wvalid  (),
-        .resp_hndler_m_axi_wready  (tie_wready),
+        .resp_hndler_m_axi_awvalid (resp_mem_if.awvalid),
+        .resp_hndler_m_axi_awready (resp_mem_if.awready),
+        .resp_hndler_m_axi_wdata   (resp_mem_if.wdata),
+        .resp_hndler_m_axi_wstrb   (resp_mem_if.wstrb),
+        .resp_hndler_m_axi_wlast   (resp_mem_if.wlast),
+        .resp_hndler_m_axi_wvalid  (resp_mem_if.wvalid),
+        .resp_hndler_m_axi_wready  (resp_mem_if.wready),
         .resp_hndler_m_axi_awlock  (),
-        .resp_hndler_m_axi_bid     (tie_bid),
-        .resp_hndler_m_axi_bresp   (tie_bresp),
-        .resp_hndler_m_axi_bvalid  (tie_bvalid),
-        .resp_hndler_m_axi_bready  (),
-        .resp_hndler_m_axi_arid    (),
-        .resp_hndler_m_axi_araddr  (),
-        .resp_hndler_m_axi_arlen   (),
-        .resp_hndler_m_axi_arsize  (),
-        .resp_hndler_m_axi_arburst (),
+        .resp_hndler_m_axi_bid     (resp_mem_if.bid[0]),
+        .resp_hndler_m_axi_bresp   (resp_mem_if.bresp),
+        .resp_hndler_m_axi_bvalid  (resp_mem_if.bvalid),
+        .resp_hndler_m_axi_bready  (resp_mem_if.bready),
+        .resp_hndler_m_axi_arid    (resp_mem_if.arid[0]),
+        .resp_hndler_m_axi_araddr  (resp_mem_if.araddr[31:0]),
+        .resp_hndler_m_axi_arlen   (resp_mem_if.arlen),
+        .resp_hndler_m_axi_arsize  (resp_mem_if.arsize),
+        .resp_hndler_m_axi_arburst (resp_mem_if.arburst),
         .resp_hndler_m_axi_arcache (),
         .resp_hndler_m_axi_arprot  (),
-        .resp_hndler_m_axi_arvalid (),
-        .resp_hndler_m_axi_arready (tie_arready),
-        .resp_hndler_m_axi_rid     (tie_rid),
-        .resp_hndler_m_axi_rdata   (tie_rdata),
-        .resp_hndler_m_axi_rresp   (tie_rresp),
-        .resp_hndler_m_axi_rlast   (tie_rlast),
-        .resp_hndler_m_axi_rvalid  (tie_rvalid),
-        .resp_hndler_m_axi_rready  (),
+        .resp_hndler_m_axi_arvalid (resp_mem_if.arvalid),
+        .resp_hndler_m_axi_arready (resp_mem_if.arready),
+        .resp_hndler_m_axi_rid     (resp_mem_if.rid[0]),
+        .resp_hndler_m_axi_rdata   (resp_mem_if.rdata),
+        .resp_hndler_m_axi_rresp   (resp_mem_if.rresp),
+        .resp_hndler_m_axi_rlast   (resp_mem_if.rlast),
+        .resp_hndler_m_axi_rvalid  (resp_mem_if.rvalid),
+        .resp_hndler_m_axi_rready  (resp_mem_if.rready),
         .resp_hndler_m_axi_arlock  (),
 
         // ============================================================
-        // Unused AXI4 master: QP Manager
+        // AXI4 master: QP Manager — connected to shared memory
         // ============================================================
-        .qp_mgr_m_axi_awid    (),
-        .qp_mgr_m_axi_awaddr  (),
-        .qp_mgr_m_axi_awlen   (),
-        .qp_mgr_m_axi_awsize  (),
-        .qp_mgr_m_axi_awburst (),
+        .qp_mgr_m_axi_awid    (qp_mem_if.awid[0]),
+        .qp_mgr_m_axi_awaddr  (qp_mem_if.awaddr[31:0]),
+        .qp_mgr_m_axi_awlen   (qp_mem_if.awlen),
+        .qp_mgr_m_axi_awsize  (qp_mem_if.awsize),
+        .qp_mgr_m_axi_awburst (qp_mem_if.awburst),
         .qp_mgr_m_axi_awcache (),
         .qp_mgr_m_axi_awprot  (),
-        .qp_mgr_m_axi_awvalid (),
-        .qp_mgr_m_axi_awready (tie_awready),
-        .qp_mgr_m_axi_wdata   (),
-        .qp_mgr_m_axi_wstrb   (),
-        .qp_mgr_m_axi_wlast   (),
-        .qp_mgr_m_axi_wvalid  (),
-        .qp_mgr_m_axi_wready  (tie_wready),
+        .qp_mgr_m_axi_awvalid (qp_mem_if.awvalid),
+        .qp_mgr_m_axi_awready (qp_mem_if.awready),
+        .qp_mgr_m_axi_wdata   (qp_mem_if.wdata),
+        .qp_mgr_m_axi_wstrb   (qp_mem_if.wstrb),
+        .qp_mgr_m_axi_wlast   (qp_mem_if.wlast),
+        .qp_mgr_m_axi_wvalid  (qp_mem_if.wvalid),
+        .qp_mgr_m_axi_wready  (qp_mem_if.wready),
         .qp_mgr_m_axi_awlock  (),
-        .qp_mgr_m_axi_bid     (tie_bid),
-        .qp_mgr_m_axi_bresp   (tie_bresp),
-        .qp_mgr_m_axi_bvalid  (tie_bvalid),
-        .qp_mgr_m_axi_bready  (),
-        .qp_mgr_m_axi_arid    (),
-        .qp_mgr_m_axi_araddr  (),
-        .qp_mgr_m_axi_arlen   (),
-        .qp_mgr_m_axi_arsize  (),
-        .qp_mgr_m_axi_arburst (),
+        .qp_mgr_m_axi_bid     (qp_mem_if.bid[0]),
+        .qp_mgr_m_axi_bresp   (qp_mem_if.bresp),
+        .qp_mgr_m_axi_bvalid  (qp_mem_if.bvalid),
+        .qp_mgr_m_axi_bready  (qp_mem_if.bready),
+        .qp_mgr_m_axi_arid    (qp_mem_if.arid[0]),
+        .qp_mgr_m_axi_araddr  (qp_mem_if.araddr[31:0]),
+        .qp_mgr_m_axi_arlen   (qp_mem_if.arlen),
+        .qp_mgr_m_axi_arsize  (qp_mem_if.arsize),
+        .qp_mgr_m_axi_arburst (qp_mem_if.arburst),
         .qp_mgr_m_axi_arcache (),
         .qp_mgr_m_axi_arprot  (),
-        .qp_mgr_m_axi_arvalid (),
-        .qp_mgr_m_axi_arready (tie_arready),
-        .qp_mgr_m_axi_rid     (tie_rid),
-        .qp_mgr_m_axi_rdata   (tie_rdata),
-        .qp_mgr_m_axi_rresp   (tie_rresp),
-        .qp_mgr_m_axi_rlast   (tie_rlast),
-        .qp_mgr_m_axi_rvalid  (tie_rvalid),
-        .qp_mgr_m_axi_rready  (),
+        .qp_mgr_m_axi_arvalid (qp_mem_if.arvalid),
+        .qp_mgr_m_axi_arready (qp_mem_if.arready),
+        .qp_mgr_m_axi_rid     (qp_mem_if.rid[0]),
+        .qp_mgr_m_axi_rdata   (qp_mem_if.rdata),
+        .qp_mgr_m_axi_rresp   (qp_mem_if.rresp),
+        .qp_mgr_m_axi_rlast   (qp_mem_if.rlast),
+        .qp_mgr_m_axi_rvalid  (qp_mem_if.rvalid),
+        .qp_mgr_m_axi_rready  (qp_mem_if.rready),
         .qp_mgr_m_axi_arlock  (),
 
         // ============================================================
@@ -385,10 +391,10 @@ module tb_top;
         .i_qp_rq_cidb_wr_valid_hndshk  (tie_i_qp_rq_cidb_wr_valid_hndshk),
         .o_qp_rq_cidb_wr_rdy           (),
 
-        .i_qp_sq_pidb_hndshk           (tie_i_qp_sq_pidb_hndshk),
-        .i_qp_sq_pidb_wr_addr_hndshk   (tie_i_qp_sq_pidb_wr_addr_hndshk),
-        .i_qp_sq_pidb_wr_valid_hndshk  (tie_i_qp_sq_pidb_wr_valid_hndshk),
-        .o_qp_sq_pidb_wr_rdy           (),
+        .i_qp_sq_pidb_hndshk           (pidb_hndshk),
+        .i_qp_sq_pidb_wr_addr_hndshk   (pidb_wr_addr),
+        .i_qp_sq_pidb_wr_valid_hndshk  (pidb_valid),
+        .o_qp_sq_pidb_wr_rdy           (pidb_rdy),
 
         .rx_pkt_hndler_o_rq_db_data        (),
         .rx_pkt_hndler_o_rq_db_addr        (),
@@ -412,6 +418,12 @@ module tb_top;
     // ----------------------------------------------------------------
     assign mem_if.awaddr[63:32] = 32'b0;
     assign mem_if.araddr[63:32] = 32'b0;
+    assign wqe_mem_if.awaddr[63:32] = 32'b0;
+    assign wqe_mem_if.araddr[63:32] = 32'b0;
+    assign qp_mem_if.awaddr[63:32] = 32'b0;
+    assign qp_mem_if.araddr[63:32] = 32'b0;
+    assign resp_mem_if.awaddr[63:32] = 32'b0;
+    assign resp_mem_if.araddr[63:32] = 32'b0;
 
     // ----------------------------------------------------------------
     // UVM config DB — publish interfaces
@@ -421,6 +433,9 @@ module tb_top;
         uvm_config_db #(virtual axis_if)::set(null, "uvm_test_top.env.tx_agt.*",      "axis_vif",     net_tx);
         uvm_config_db #(virtual axis_if)::set(null, "uvm_test_top.env.rx_agt.*",      "axis_vif",     net_rx);
         uvm_config_db #(virtual axi4_if)::set(null, "uvm_test_top.env.mem",           "axi4_vif",     mem_if);
+        uvm_config_db #(virtual axi4_if)::set(null, "uvm_test_top.env.wqe_mem",       "axi4_vif",     wqe_mem_if);
+        uvm_config_db #(virtual axi4_if)::set(null, "uvm_test_top.env.qp_mem",        "axi4_vif",     qp_mem_if);
+        uvm_config_db #(virtual axi4_if)::set(null, "uvm_test_top.env.resp_mem",      "axi4_vif",     resp_mem_if);
         run_test();
     end
 
@@ -428,5 +443,53 @@ module tb_top;
     // TX loopback tready (always accept) when no RX driver is active
     // ----------------------------------------------------------------
     assign net_tx.tready = 1'b1;
+
+    // ERNIC system_resetn — pull up (output may be open-drain)
+    pullup (dut.system_resetn);
+
+    // ----------------------------------------------------------------
+    // PIDB doorbell generator — monitors AXI-Lite CSR doorbell writes
+    // and forwards them to the ERNIC's native PIDB handshake interface.
+    // Triggered on write-response (B) channel, which means the full
+    // AXI-Lite write (AW+W+B) has completed.
+    // ----------------------------------------------------------------
+    logic [31:0] db_pidb_addr;
+    logic [15:0] db_pidb_data;
+    logic        db_pidb_pend;
+
+    initial begin
+        pidb_hndshk  = 16'b0;
+        pidb_wr_addr = 32'b0;
+        pidb_valid   = 1'b0;
+        db_pidb_pend = 1'b0;
+    end
+
+    // Stage 1: latch doorbell info on AW+W phase
+    // Detect writes to SQPI register (offset 0x38) within per-QP space (0x18_xxxx)
+    always @(posedge clk) begin
+        if (csr_if.awvalid && csr_if.awready &&
+            csr_if.awaddr[7:0] == 8'h38 &&        // SQPI offset
+            csr_if.awaddr[23:16] == 8'h18) begin   // per-QP space
+            // QP index is 1-based: QPN = awaddr[15:8] + 1
+            automatic logic [10:0] qpn = {3'h0, csr_if.awaddr[15:8]} + 11'd1;
+            // pidb_wr_addr = register address; pidb_hndshk = new PI value
+            db_pidb_addr <= csr_if.awaddr;
+            db_pidb_data <= csr_if.wdata[15:0];
+            db_pidb_pend <= 1'b1;
+        end
+        if (pidb_valid && pidb_rdy)
+            db_pidb_pend <= 1'b0;
+    end
+
+    // Stage 2: drive PIDB handshake when AXI-Lite write completes (B response)
+    always @(posedge clk) begin
+        if (db_pidb_pend && csr_if.bvalid && csr_if.bready) begin
+            pidb_hndshk  <= db_pidb_data;
+            pidb_wr_addr <= db_pidb_addr;
+            pidb_valid   <= 1'b1;
+            @(posedge clk iff pidb_rdy);
+            pidb_valid   <= 1'b0;
+        end
+    end
 
 endmodule

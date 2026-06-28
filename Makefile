@@ -7,6 +7,7 @@ VIVADO  ?= vivado
 VCS     ?= vcs
 
 UVM_HOME    ?= /home/harry/synopsys/vcs-mx/O-2018.09-SP2/etc/uvm-1.2
+VCS_HOME    := $(abspath $(UVM_HOME)/../..)
 
 BUILD_DIR   := build
 VCS_LIB     := $(BUILD_DIR)/vcs_lib
@@ -46,6 +47,18 @@ $(PTHREAD_STUB):
 	@echo 'int pthread_yield(void){extern int sched_yield(void);return sched_yield();}' | \
 	    gcc -shared -fPIC -xc - -o $@
 
+# UVM DPI shared library (required by UVM 1.2 multi-step flow)
+UVM_DPI_SRC  := $(UVM_HOME)/dpi
+UVM_DPI_LIB  := $(BUILD_DIR)/libuvm_dpi.so
+
+$(UVM_DPI_LIB):
+	g++ -shared -fPIC -DVCS \
+	    -I$(UVM_DPI_SRC) \
+	    -I$(VCS_HOME)/include \
+	    $(UVM_DPI_SRC)/uvm_dpi.cc \
+	    -o $@
+	@echo "[DPI] UVM DPI shared library built: $@"
+
 # Vivado install root (for VIP/XPM source paths)
 VIVADO_ROOT := $(dir $(shell which vivado))..
 VIVADO_ROOT := $(abspath $(VIVADO_ROOT))
@@ -73,7 +86,7 @@ VCS_LIBS := xilinx_vip xpm blk_mem_gen_v8_4_5 \
 # Step 2a: vlogan — compile SV/Verilog to design libraries
 # Step 2b: vhdlan — compile VHDL to design libraries
 # Step 2c: vcs   — elaborate with UVM
-$(SIMV): $(ERNIC_LIB)/.done $(PTHREAD_STUB)
+$(SIMV): $(ERNIC_LIB)/.done $(PTHREAD_STUB) $(UVM_DPI_LIB)
 	@mkdir -p $(BUILD_DIR)
 	@# Create VCS library directories
 	@mkdir -p $(addprefix $(VCS_LIB)/,$(VCS_LIBS))
@@ -163,7 +176,7 @@ $(SIMV): $(ERNIC_LIB)/.done $(PTHREAD_STUB)
 	# Pure elaboration: resolve from pre-compiled libs, link with UVM DPI
 	$(VCS_ELAB) -full64 -debug_acc+pp+dmptf \
 	    -Mdir=$(BUILD_DIR)/csrc \
-	    -LDFLAGS "-Wl,-rpath,$(CURDIR)/$(BUILD_DIR) -L$(CURDIR)/$(BUILD_DIR) -l:pthread_yield_stub.so" \
+	    -LDFLAGS "-Wl,-rpath,$(CURDIR)/$(BUILD_DIR) -L$(CURDIR)/$(BUILD_DIR) -l:pthread_yield_stub.so -l:libuvm_dpi.so" \
 	    xil_defaultlib.ernic_v4_0 work.tb_top xil_defaultlib.glbl \
 	    -l $(ELAB_LOG) \
 	    -o $(SIMV) 2>&1 | tee $(ELAB_LOG)
@@ -174,6 +187,7 @@ compile: $(SIMV)
 # Step 3: Run simulation
 # ============================================================
 SIM_LOG := $(BUILD_DIR)/$(TEST)_$(SEED).log
+SIM_LOG_RAW := $(BUILD_DIR)/$(TEST)_$(SEED).raw.log
 
 sim: compile
 	@echo "[SIM] Running test=$(TEST) seed=$(SEED)..."
@@ -181,7 +195,7 @@ sim: compile
 	    +UVM_TESTNAME=$(TEST) \
 	    +ntb_random_seed=$(SEED) \
 	    +UVM_VERBOSITY=UVM_MEDIUM \
-	    -l $(SIM_LOG) 2>&1 | tee $(SIM_LOG)
+	    -l $(SIM_LOG_RAW) 2>&1 | grep --line-buffered -v "XPM_MEMORY 20-[12]" | tee $(SIM_LOG)
 
 # ============================================================
 # Convenience targets per test point
@@ -214,7 +228,7 @@ all_tests:
 clean:
 	rm -rf $(SIMV) $(SIMV).daidir $(BUILD_DIR)/csrc \
 	    $(BUILD_DIR)/*.log $(BUILD_DIR)/*.vpd ucli.key \
-	    $(VCS_LIB) $(PTHREAD_STUB) $(SYNOPSYS_SETUP)
+	    $(VCS_LIB) $(PTHREAD_STUB) $(UVM_DPI_LIB) $(SYNOPSYS_SETUP)
 
 distclean: clean
 	rm -rf $(BUILD_DIR)

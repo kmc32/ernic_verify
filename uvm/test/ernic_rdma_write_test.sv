@@ -13,15 +13,14 @@ class ernic_rdma_write_test extends ernic_base_test;
         foreach (src_data[i]) src_data[i] = i;
         env.mem.backdoor_write(64'h2000_0000, src_data);
 
-        setup_qp(0);
+        setup_qp(2);
 
         seq             = rdma_write_seq::type_id::create("seq");
-        seq.qpn         = 0;
+        seq.qpn         = 2;
         seq.sq_addr     = 64'h1000_0000;
         seq.local_addr  = 64'h2000_0000;
-        seq.local_key   = 32'h1;
+        seq.rkey        = 32'h1;
         seq.remote_addr = 64'h3000_0000;
-        seq.remote_key  = 32'h2;
         seq.length      = 64;
         seq.mem_model   = env.mem;
         seq.start(csr_seqr());

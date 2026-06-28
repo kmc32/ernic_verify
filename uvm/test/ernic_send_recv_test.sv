@@ -12,15 +12,15 @@ class ernic_send_recv_test extends ernic_base_test;
         foreach (payload[i]) payload[i] = 8'hA0 + i[7:0];
         env.mem.backdoor_write(64'h5000_0000, payload);
 
-        setup_qp(0);
+        setup_qp(2);
 
         seq            = send_recv_seq::type_id::create("seq");
-        seq.qpn        = 0;
+        seq.qpn        = 2;
         seq.sq_addr    = 64'h1000_0000;
         seq.rq_addr    = 64'h1001_0000;
         seq.send_buf   = 64'h5000_0000;
         seq.recv_buf   = 64'h5001_0000;
-        seq.lkey       = 32'h1;
+        seq.rkey       = 32'h1;
         seq.length     = 64;
         seq.mem_model  = env.mem;
         seq.start(csr_seqr());

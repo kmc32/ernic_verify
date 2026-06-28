@@ -1,45 +1,106 @@
 // QP setup sequence — configures one QP via AXI-Lite CSR
+// Follows PG332 v4.0 Chapter 6: ERNIC Software Flow
 `include "uvm/seq/ernic_csr.svh"
 
 class qp_setup_seq extends ernic_base_seq;
     `uvm_object_utils(qp_setup_seq)
 
     // Required parameters (set before start())
-    int unsigned qpn       = 0;
+    // QP number: 1-based per PG332. QP1=MAD, QP2+=RC. Default QP2.
+    int unsigned qpn       = 2;
     bit [31:0]   src_ip    = 32'hC0A80001; // 192.168.0.1
     bit [47:0]   src_mac   = 48'hAABBCCDD0001;
     bit [31:0]   dst_ip    = 32'hC0A80002;
-    int unsigned dst_qpn   = 1;
+    bit [47:0]   dst_mac   = 48'hAABBCCDD0002;
+    int unsigned dst_qpn   = 3;            // remote QP number
     longint unsigned sq_addr = 64'h1000_0000;
     longint unsigned rq_addr = 64'h1001_0000;
     longint unsigned cq_addr = 64'h1002_0000;
+    // Doorbell addresses — ERNIC writes CQ head / RQ write ptr here
+    longint unsigned cq_db_addr     = 64'hA000_0000;
+    longint unsigned rq_wptr_db_addr = 64'hA000_1000;
+    // Queue depths
+    int unsigned   sq_depth = 128;
+    int unsigned   rq_depth = 128;
+    // RQ buffer size in multiples of 256B
+    int unsigned   rq_buf_size = 64;      // 64 * 256B = 16KB per RQ element
 
     function new(string name = "qp_setup_seq");
         super.new(name);
     endfunction
 
     task body();
-        // Global network config (only QP0 sets it to avoid races)
-        if (qpn == 0) begin
-            csr_write(`ERNIC_CONF_SRC_MAC_L, src_mac[31:0]);
-            csr_write(`ERNIC_CONF_SRC_MAC_H, {16'h0, src_mac[47:32]});
-            csr_write(`ERNIC_CONF_SRC_IP,    src_ip);
+        bit [31:0] qp_base = `ERNIC_PER_QP_BASE(qpn);
+        bit [31:0] qpconf_val;
+
+        // Global network config (only once, by whoever sets it first)
+        if (qpn == 2) begin
+            csr_write(`ERNIC_MACXADDLSB, src_mac[31:0]);
+            csr_write(`ERNIC_MACXADDMSB, {16'h0, src_mac[47:32]});
+            csr_write(`ERNIC_IPv4XADD,   src_ip);
         end
-        // QP context
-        csr_write(`ERNIC_QP_BASE(qpn) + `ERNIC_QP_SEND_QA_L, sq_addr[31:0]);
-        csr_write(`ERNIC_QP_BASE(qpn) + `ERNIC_QP_SEND_QA_H, sq_addr[63:32]);
-        csr_write(`ERNIC_QP_BASE(qpn) + `ERNIC_QP_RECV_QA_L, rq_addr[31:0]);
-        csr_write(`ERNIC_QP_BASE(qpn) + `ERNIC_QP_RECV_QA_H, rq_addr[63:32]);
-        csr_write(`ERNIC_QP_BASE(qpn) + `ERNIC_QP_CQ_ADDR_L, cq_addr[31:0]);
-        csr_write(`ERNIC_QP_BASE(qpn) + `ERNIC_QP_CQ_ADDR_H, cq_addr[63:32]);
-        csr_write(`ERNIC_QP_BASE(qpn) + `ERNIC_QP_DST_QPN,   dst_qpn);
-        csr_write(`ERNIC_QP_BASE(qpn) + `ERNIC_QP_DST_IP,    dst_ip);
-        csr_write(`ERNIC_QP_BASE(qpn) + `ERNIC_QP_RQ_PSN,    32'h0);
-        csr_write(`ERNIC_QP_BASE(qpn) + `ERNIC_QP_SQ_PSN,    32'h0);
-        csr_write(`ERNIC_QP_BASE(qpn) + `ERNIC_QP_RETRY_CNT, 32'h7);
-        csr_write(`ERNIC_QP_BASE(qpn) + `ERNIC_QP_TIMEOUT,   32'h12);
-        // Enable QP
-        csr_write(`ERNIC_QP_BASE(qpn) + `ERNIC_QP_CONF, 32'h1);
-        `uvm_info("QP_SETUP", $sformatf("QP%0d configured", qpn), UVM_MEDIUM)
+
+        // ---- RC QP Creation (Chapter 6) ----
+
+        // 1. Queue base addresses
+        // SQ base (32B aligned)
+        csr_write(qp_base + `ERNIC_QP_SQBA,    sq_addr[31:0]);
+        csr_write(qp_base + `ERNIC_QP_SQBAMSB, sq_addr[63:32]);
+        // RQ base (256B aligned)
+        csr_write(qp_base + `ERNIC_QP_RQBA,    rq_addr[31:0]);
+        csr_write(qp_base + `ERNIC_QP_RQBAMSB, rq_addr[63:32]);
+        // CQ base (32B aligned)
+        csr_write(qp_base + `ERNIC_QP_CQBA,    cq_addr[31:0]);
+        csr_write(qp_base + `ERNIC_QP_CQBAMSB, cq_addr[63:32]);
+
+        // 2. Queue depths: [15:0]=SQ depth, [31:16]=RQ depth
+        csr_write(qp_base + `ERNIC_QP_QDEPTH, {rq_depth[15:0], sq_depth[15:0]});
+
+        // 3. Doorbell address pointers (where ERNIC writes CQ head / RQ write ptr)
+        csr_write(qp_base + `ERNIC_QP_CQDBADD,     cq_db_addr[31:0]);
+        csr_write(qp_base + `ERNIC_QP_CQDBADDMSB,  cq_db_addr[63:32]);
+        csr_write(qp_base + `ERNIC_QP_RQWPTRDBADD,    rq_wptr_db_addr[31:0]);
+        csr_write(qp_base + `ERNIC_QP_RQWPTRDBADDMSB, rq_wptr_db_addr[63:32]);
+
+        // 4. Remote host configuration
+        csr_write(qp_base + `ERNIC_QP_MACDESADDLSB, dst_mac[31:0]);
+        csr_write(qp_base + `ERNIC_QP_MACDESADDMSB, {16'h0, dst_mac[47:32]});
+        csr_write(qp_base + `ERNIC_QP_DESTQPCONF,   dst_qpn[23:0]);
+        csr_write(qp_base + `ERNIC_QP_IPDESADDR1,   dst_ip);
+
+        // 5. PSN initialization
+        csr_write(qp_base + `ERNIC_QP_SQPSN,    24'h0);
+        csr_write(qp_base + `ERNIC_QP_LSTRQREQ, 32'h0);
+
+        // 6. Timeout configuration
+        // [5:0]=timeout, [10:8]=max_retry(7), [13:11]=RNR retry(7), [20:16]=RNR timeout(0x12)
+        csr_write(qp_base + `ERNIC_QP_TIMEOUTCONF, {11'h0, 5'h12, 3'h7, 3'h7, 2'h0, 6'h12});
+
+        // 7. QP Advanced config (traffic class, TTL, partition key)
+        csr_write(qp_base + `ERNIC_QP_QPADVCONF, 32'h0);  // defaults
+
+        // 8. Build and write QPCONF:
+        //    [31:16] = RQ buffer size in 256B multiples
+        //    [10:8]  = PMTU (011 = 2048B)
+        //    [7]     = 0 (IPv4)
+        //    [4]     = 0 (HW handshake enabled)
+        //    [0]     = 1 (QP enable)
+        qpconf_val = {rq_buf_size[15:0], 13'h0, `PMTU_2048B, 4'h0, 1'b1};
+        csr_write(qp_base + `ERNIC_QP_QPCONF, qpconf_val);
+
+        // 9. Write retry data buffer config (needed for outgoing WRITE)
+        csr_write(`ERNIC_DATBUFBA,    32'h8000_0000);  // data buffer base
+        csr_write(`ERNIC_DATBUFBAMSB, 32'h0);
+        csr_write(`ERNIC_DATBUFSZ,    {16'd256, 16'd1024});  // 256 buffers x 1KB each
+
+        // 10. Error buffer (optional but recommended)
+        csr_write(`ERNIC_ERRBUFBA,    32'hA000_0000);
+        csr_write(`ERNIC_ERRBUFBAMSB, 32'h0);
+        csr_write(`ERNIC_ERRBUFSZ,    {16'd256, 16'd256});  // 256 entries x 256B each
+
+        // 11. Enable ERNIC globally (XRNICCONF[0]=1, UDP src port=0x4791)
+        csr_write(`ERNIC_XRNICCONF, {8'h0, 16'h4791, 5'h0, 2'b00, 1'b0, 1'b1});
+
+        `uvm_info("QP_SETUP", $sformatf("QP%0d configured at base 0x%08h", qpn, qp_base), UVM_MEDIUM)
     endtask
 endclass

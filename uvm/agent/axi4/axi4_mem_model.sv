@@ -3,8 +3,8 @@ class axi4_mem_model extends uvm_component;
     `uvm_component_utils(axi4_mem_model)
 
     virtual axi4_if vif;
-    // Sparse byte-addressable memory
-    byte unsigned mem[longint unsigned];
+    // Sparse byte-addressable memory — static so all instances share the same backing store
+    static byte unsigned mem[longint unsigned];
 
     function new(string name, uvm_component parent);
         super.new(name, parent);

@@ -15,6 +15,7 @@ vivado*.log
 *.pb
 .jou
 .log
+tr_db.log
 
 # Simulations
 ucli.key
