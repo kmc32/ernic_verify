@@ -33,11 +33,29 @@ class qp_setup_seq extends ernic_base_seq;
         bit [31:0] qp_base = `ERNIC_PER_QP_BASE(qpn);
         bit [31:0] qpconf_val;
 
-        // Global network config (only once, by whoever sets it first)
+        // ---- Global config (only once) ----
         if (qpn == 2) begin
             csr_write(`ERNIC_MACXADDLSB, src_mac[31:0]);
             csr_write(`ERNIC_MACXADDMSB, {16'h0, src_mac[47:32]});
             csr_write(`ERNIC_IPv4XADD,   src_ip);
+
+            // QP0 (local QP) minimal config — required before QP1
+            csr_write(32'h00000004, 32'hcad53074); // QP0 Virtual Address LSB
+            csr_write(32'h0000000c, 32'h40000000); // QP0 Buffer base address LSB
+            csr_write(32'h00000014, 32'h00000098); // QP0 Buffer R_Key
+            csr_write(32'h00000018, 32'h00100000); // QP0 Write Read Buffer length
+            csr_write(32'h0000001c, 32'h00000002); // QP0 Access Description
+
+            // QP1 (MAD QP) creation — required per PG332 Chapter 6 step 2
+            csr_write(`ERNIC_PER_QP_BASE(1) + 32'h00, 32'h00000001); // QP1 PD Number
+            csr_write(`ERNIC_PER_QP_BASE(1) + 32'h04, 32'hcad93074); // QP1 Virtual Address LSB
+            csr_write(`ERNIC_PER_QP_BASE(1) + 32'h0c, 32'h40040000); // QP1 Buffer base address
+            csr_write(`ERNIC_PER_QP_BASE(1) + 32'h14, 32'h00000081); // QP1 Buffer R_Key
+            csr_write(`ERNIC_PER_QP_BASE(1) + 32'h18, 32'h00100000); // QP1 Write Read Buffer len
+            csr_write(`ERNIC_PER_QP_BASE(1) + 32'h1c, 32'h00000002); // QP1 Access Description
+
+            // Global commit (matching example design 0x100044 = 0x07 pattern)
+            csr_write(32'h00100044, 32'h00000007);
         end
 
         // ---- RC QP Creation (Chapter 6) ----
@@ -100,6 +118,9 @@ class qp_setup_seq extends ernic_base_seq;
 
         // 11. Enable ERNIC globally (XRNICCONF[0]=1, UDP src port=0x4791)
         csr_write(`ERNIC_XRNICCONF, {8'h0, 16'h4791, 5'h0, 2'b00, 1'b0, 1'b1});
+
+        // Final commit trigger (matching example design pattern)
+        csr_write(32'h00100044, 32'h00000007);
 
         `uvm_info("QP_SETUP", $sformatf("QP%0d configured at base 0x%08h", qpn, qp_base), UVM_MEDIUM)
     endtask

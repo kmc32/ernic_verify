@@ -82,7 +82,7 @@ module tb_top;
     logic [31:0] tie_i_qp_rq_cidb_wr_addr_hndshk = 32'b0;
     logic        tie_i_qp_rq_cidb_wr_valid_hndshk = 1'b0;
     logic        tie_rx_pkt_hndler_i_rq_db_rdy = 1'b0;
-    logic        tie_ieth_immdt_axis_trdy = 1'b0;
+    logic        tie_ieth_immdt_axis_trdy = 1'b1;  // must be 1 (example design)
     logic [8:0]  tie_stat_rx_pause_req = 9'b0;
 
     // SQ PIDB doorbell generator (driven on AXI-Lite write to DOORBELL)
@@ -375,7 +375,7 @@ module tb_top;
         .non_roce_dma_m_axis_tdata    (),
         .non_roce_dma_m_axis_tkeep    (),
         .non_roce_dma_m_axis_tvalid   (),
-        .non_roce_dma_m_axis_tready   (1'b1),
+        .non_roce_dma_m_axis_tready   (1'b0),  // tie low per example design
         .non_roce_dma_m_axis_tlast    (),
 
         // ============================================================
@@ -444,15 +444,26 @@ module tb_top;
     // ----------------------------------------------------------------
     assign net_tx.tready = 1'b1;
 
+    // ----------------------------------------------------------------
+    // TX-to-RX loopback (matching example design architecture)
+    // ERNIC TX output loops back to ERNIC RX input so the IP can
+    // receive its own ACK/ReadResponse packets for reliable transport.
+    // ----------------------------------------------------------------
+    assign net_rx.tvalid = net_tx.tvalid;
+    assign net_rx.tdata  = net_tx.tdata;
+    assign net_rx.tkeep  = net_tx.tkeep;
+    assign net_rx.tlast  = net_tx.tlast;
+    assign net_rx.tuser  = 1'b0;
+
     // ERNIC system_resetn — pull up (output may be open-drain)
     pullup (dut.system_resetn);
 
     // ----------------------------------------------------------------
-    // PIDB doorbell generator — monitors AXI-Lite CSR doorbell writes
-    // and forwards them to the ERNIC's native PIDB handshake interface.
-    // Triggered on write-response (B) channel, which means the full
-    // AXI-Lite write (AW+W+B) has completed.
+    // PIDB doorbell generator — DISABLED (tied to 0 like example design).
+    // The ERNIC receives doorbell notifications through AXI-Lite CSR
+    // writes to the SQPI register, not through the native PIDB interface.
     // ----------------------------------------------------------------
+    /*
     logic [31:0] db_pidb_addr;
     logic [15:0] db_pidb_data;
     logic        db_pidb_pend;
@@ -465,14 +476,11 @@ module tb_top;
     end
 
     // Stage 1: latch doorbell info on AW+W phase
-    // Detect writes to SQPI register (offset 0x38) within per-QP space (0x18_xxxx)
     always @(posedge clk) begin
         if (csr_if.awvalid && csr_if.awready &&
-            csr_if.awaddr[7:0] == 8'h38 &&        // SQPI offset
-            csr_if.awaddr[23:16] == 8'h18) begin   // per-QP space
-            // QP index is 1-based: QPN = awaddr[15:8] + 1
+            csr_if.awaddr[7:0] == 8'h38 &&
+            csr_if.awaddr[23:16] == 8'h18) begin
             automatic logic [10:0] qpn = {3'h0, csr_if.awaddr[15:8]} + 11'd1;
-            // pidb_wr_addr = register address; pidb_hndshk = new PI value
             db_pidb_addr <= csr_if.awaddr;
             db_pidb_data <= csr_if.wdata[15:0];
             db_pidb_pend <= 1'b1;
@@ -491,5 +499,11 @@ module tb_top;
             pidb_valid   <= 1'b0;
         end
     end
+    */
+
+    // PIDB signals tied to 0 (matching example design)
+    assign pidb_hndshk  = 16'b0;
+    assign pidb_wr_addr = 32'b0;
+    assign pidb_valid   = 1'b0;
 
 endmodule

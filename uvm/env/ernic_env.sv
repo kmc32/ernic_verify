@@ -26,7 +26,7 @@ class ernic_env extends uvm_env;
         resp_mem = axi4_mem_model::type_id::create("resp_mem", this);
         sb      = ernic_scoreboard::type_id::create("sb", this);
         uvm_config_db #(uvm_active_passive_enum)::set(this, "tx_agt", "is_active", UVM_PASSIVE);
-        uvm_config_db #(uvm_active_passive_enum)::set(this, "rx_agt", "is_active", UVM_ACTIVE);
+        uvm_config_db #(uvm_active_passive_enum)::set(this, "rx_agt", "is_active", UVM_PASSIVE);
     endfunction
 
     function void connect_phase(uvm_phase phase);

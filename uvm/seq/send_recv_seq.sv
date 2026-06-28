@@ -54,7 +54,7 @@ class send_recv_seq extends ernic_base_seq;
         sq_wqe.immdt_data = with_imm ? imm_data : 32'h0;
 
         // Write WQE into SQ memory via backdoor
-        b = {>>byte{sq_wqe}};
+        b = {<<byte{sq_wqe}};  // AXI4 little-endian: LSB at lowest addr
         mem_model.backdoor_write(sq_addr, b);
 
         // Ring doorbell: increment SQ Producer Index and write to SQPI register

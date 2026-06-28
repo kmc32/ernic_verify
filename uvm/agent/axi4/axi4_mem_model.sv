@@ -32,6 +32,7 @@ class axi4_mem_model extends uvm_component;
             vif.slave_cb.awready <= 0;
             @(vif.slave_cb iff vif.slave_cb.awvalid);
             base = vif.slave_cb.awaddr;
+            `uvm_info("MEM_WR", $sformatf("%s AWADDR=0x%08h AWLEN=%0d", get_full_name(), base, vif.slave_cb.awlen), UVM_NONE)
             vif.slave_cb.awready <= 1;
             @(vif.slave_cb); vif.slave_cb.awready <= 0;
             // W beats
@@ -66,6 +67,7 @@ class axi4_mem_model extends uvm_component;
             @(vif.slave_cb iff vif.slave_cb.arvalid);
             base = vif.slave_cb.araddr;
             len  = vif.slave_cb.arlen + 1;
+            `uvm_info("MEM_RD", $sformatf("%s ARADDR=0x%08h ARLEN=%0d", get_full_name(), base, vif.slave_cb.arlen), UVM_NONE)
             vif.slave_cb.arready <= 1;
             @(vif.slave_cb); vif.slave_cb.arready <= 0;
             for (int b = 0; b < len; b++) begin
@@ -73,6 +75,7 @@ class axi4_mem_model extends uvm_component;
                 for (int k = 0; k < DBytes; k++)
                     beat[k*8 +: 8] = mem.exists(base + b*DBytes + k) ?
                                       mem[base + b*DBytes + k] : 8'h0;
+                if (b == 0) `uvm_info("MEM_RD", $sformatf("%s BEAT0 first 32b=0x%08h", get_full_name(), beat[511:480]), UVM_NONE)
                 @(vif.slave_cb);
                 vif.slave_cb.rid   <= vif.slave_cb.arid;
                 vif.slave_cb.rdata <= beat;

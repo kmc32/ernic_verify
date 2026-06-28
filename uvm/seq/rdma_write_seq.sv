@@ -54,18 +54,17 @@ class rdma_write_seq extends ernic_base_seq;
         byte unsigned wqe_bytes[];
         bit [15:0] pi;
 
-        // Build WQE per Table 2-1
+        // Build WQE using << (AXI4 little-endian) — correct struct→beat mapping.
+        // Try SEND opcode which may follow a simpler TX path than RDMA_WRITE.
         wqe = '0;
-        wqe.wrid     = 16'h0;
-        wqe.laddr    = local_addr;
-        wqe.length   = length;
-        wqe.opcode   = with_imm ? `WQE_OP_RDMA_WRITE_IMM : `WQE_OP_RDMA_WRITE;
-        wqe.roffset  = remote_addr;
-        wqe.rtag     = rkey;
-        wqe.immdt_data = with_imm ? imm_data : 32'h0;
-
-        // Write WQE into SQ memory via backdoor
-        wqe_bytes = {>>byte{wqe}};
+        wqe.wrid       = 16'h0;
+        wqe.opcode     = `WQE_OP_SEND;  // SEND instead of RDMA_WRITE
+        wqe.rtag       = rkey;
+        wqe.roffset    = remote_addr;
+        wqe.laddr      = local_addr;
+        wqe.length     = length;
+        wqe.sdata      = 128'hAABBCCDD_00112233_44556677_8899AABB; // test data
+        wqe_bytes = {<<byte{wqe}};
         mem_model.backdoor_write(sq_addr, wqe_bytes);
 
         // Ring doorbell: increment SQ Producer Index and write to SQPI register

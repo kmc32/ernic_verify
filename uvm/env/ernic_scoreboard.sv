@@ -26,6 +26,17 @@ class ernic_scoreboard extends uvm_scoreboard;
 
     function void write_csr(axi_lite_item item); endfunction
 
+    // Dump first N bytes of packet as hex for debug
+    function void dump_pkt_hex(byte unsigned data[], int unsigned n);
+        string s;
+        int unsigned len = (n < data.size()) ? n : data.size();
+        for (int i = 0; i < len; i++) begin
+            if (i % 16 == 0) s = {s, $sformatf("\n  %04d: ", i)};
+            s = {s, $sformatf("%02h ", data[i])};
+        end
+        `uvm_info("SB", s, UVM_NONE)
+    endfunction
+
     function void check_rocev2_header(axis_item item);
         bit [15:0] udp_dport;
 
@@ -39,7 +50,9 @@ class ernic_scoreboard extends uvm_scoreboard;
         // Verify UDP dest port = 4791 (0x12B7) — RoCEv2 indicator
         udp_dport = {item.data[36], item.data[37]};
         if (udp_dport !== 16'h12B7) begin
-            `uvm_warning("SB", $sformatf("UDP dport=0x%04h, expected 0x12B7", udp_dport))
+            `uvm_warning("SB", $sformatf("UDP dport=0x%04h at offset 36-37, expected 0x12B7", udp_dport))
+            `uvm_info("SB", $sformatf("Packet total len=%0d, first 96 bytes:", item.data.size()), UVM_NONE)
+            dump_pkt_hex(item.data, 96);
             fail_cnt++;
             return;
         end

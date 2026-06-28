@@ -42,18 +42,15 @@ class rdma_read_seq extends ernic_base_seq;
         byte unsigned wqe_bytes[];
         bit [15:0] pi;
 
-        // Build WQE per Table 2-1
+        // Build WQE per PG332 Table 2-1 (>> order with pre-swapped fields)
         wqe = '0;
         wqe.wrid     = 16'h0;
-        wqe.laddr    = local_addr;
-        wqe.length   = length;
         wqe.opcode   = `WQE_OP_RDMA_READ;
-        wqe.roffset  = remote_addr;
-        wqe.rtag     = rkey;
-
-        // Write WQE into SQ memory via backdoor
+        wqe.rtag     = {<<8{rkey}};
+        wqe.roffset  = {<<8{remote_addr}};
+        wqe.laddr    = {<<8{local_addr}};
+        wqe.length   = {<<8{length[31:0]}};
         wqe_bytes = {>>byte{wqe}};
-        mem_model.backdoor_write(sq_addr, wqe_bytes);
 
         // Ring doorbell: increment SQ Producer Index and write to SQPI register
         if (!sq_pi.exists(qpn)) sq_pi[qpn] = 16'h0;
