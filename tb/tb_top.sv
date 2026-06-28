@@ -22,6 +22,8 @@ import uvm_pkg::*;
 `include "uvm/seq/rdma_write_seq.sv"
 `include "uvm/seq/rdma_read_seq.sv"
 `include "uvm/seq/send_recv_seq.sv"
+`include "uvm/seq/exdes_full_config_seq.sv"
+`include "uvm/seq/check_regs_seq.sv"
 `include "uvm/env/ernic_scoreboard.sv"
 `include "uvm/env/ernic_env.sv"
 `include "uvm/test/ernic_base_test.sv"
@@ -37,14 +39,15 @@ module tb_top;
     // ----------------------------------------------------------------
     logic clk   = 0;
     logic rst_n = 0;
-    always #5 clk = ~clk;   // 100 MHz
+    always #10 clk = ~clk;   // 50 MHz — matching example design
     initial begin
         automatic string test_name;
         if (!$value$plusargs("UVM_TESTNAME=%s", test_name))
             test_name = "unknown_test";
         $fsdbDumpfile($sformatf("build/%s.fsdb", test_name));
         $fsdbDumpvars(0, tb_top);
-        #100 rst_n = 1;
+        // Reset: 400ns active — matching example design
+        #400 rst_n = 1;
     end
 
     // ----------------------------------------------------------------
@@ -405,10 +408,12 @@ module tb_top;
         .i_qp_rq_cidb_wr_valid_hndshk  (tie_i_qp_rq_cidb_wr_valid_hndshk),
         .o_qp_rq_cidb_wr_rdy           (),
 
-        .i_qp_sq_pidb_hndshk           (pidb_hndshk),
-        .i_qp_sq_pidb_wr_addr_hndshk   (pidb_wr_addr),
-        .i_qp_sq_pidb_wr_valid_hndshk  (pidb_valid),
-        .o_qp_sq_pidb_wr_rdy           (pidb_rdy),
+        // PIDB disabled — matching example design (tied to 0)
+        // Doorbell delivered via AXI-Lite SQPI write directly
+        .i_qp_sq_pidb_hndshk           (16'd0),
+        .i_qp_sq_pidb_wr_addr_hndshk   (32'd0),
+        .i_qp_sq_pidb_wr_valid_hndshk  (1'b0),
+        .o_qp_sq_pidb_wr_rdy           (),
 
         .rx_pkt_hndler_o_rq_db_data        (),
         .rx_pkt_hndler_o_rq_db_addr        (),
@@ -481,15 +486,119 @@ module tb_top;
             $display("[%0t] IETH_TVALID = %b", $time, dbg_ieth_tvalid);
     end
 
+    // Interrupt probe
+    always @(posedge clk) begin
+        if (dbg_rnic_intr !== 1'b0)
+            $display("[%0t] RNIC_INTR = %b", $time, dbg_rnic_intr);
+    end
+
     // ----------------------------------------------------------------
-    // TX-to-RX loopback (matching example design architecture)
-    // ERNIC TX output loops back to ERNIC RX input so the IP can
-    // receive its own ACK/ReadResponse packets for reliable transport.
+    // conf_of_reg_done: asserted after register config completes
+    // Register config takes ~79us; assert at 85us to be safe.
     // ----------------------------------------------------------------
-    assign net_rx.tvalid = net_tx.tvalid;
-    assign net_rx.tdata  = net_tx.tdata;
-    assign net_rx.tkeep  = net_tx.tkeep;
-    assign net_rx.tlast  = net_tx.tlast;
+    logic conf_of_reg_done;
+    int   cfg_timer;
+    always @(posedge clk) begin
+        if (!rst_n) begin
+            conf_of_reg_done <= 1'b0;
+            cfg_timer <= 0;
+        end else if (!conf_of_reg_done) begin
+            if (cfg_timer < 4000)  // 80us at 50MHz (20ns*4000=80us)
+                cfg_timer <= cfg_timer + 1;
+            else
+                conf_of_reg_done <= 1'b1;
+        end
+    end
+
+    // ----------------------------------------------------------------
+    // Responder module — provides remote-side ACK/ReadResponse packets
+    // ----------------------------------------------------------------
+    wire [511:0] resp_tx_tdata;
+    wire [63:0]  resp_tx_tkeep;
+    wire         resp_tx_tvalid, resp_tx_tlast;
+    wire         resp_post_wr, resp_post_rd;
+    wire         resp_rdma_snd_done;
+
+    // Debug: print responder activity
+    always @(posedge clk) begin
+        if (resp_tx_tvalid)
+            $display("[%0t] RESP_TX tlast=%0b tkeep=0x%016h", $time, resp_tx_tlast, resp_tx_tkeep);
+        if (conf_of_reg_done)
+            $display("[%0t] CONF_OF_REG_DONE", $time);
+        if (resp_rdma_snd_done)
+            $display("[%0t] RDMA_SND_TST_DONE", $time);
+        if (resp_post_wr)
+            $display("[%0t] RESP_POST_WR_WQE", $time);
+        if (resp_post_rd)
+            $display("[%0t] RESP_POST_RD_WQE", $time);
+    end
+
+    exdes_send_rdresp_ack_pkt_gen responder_inst (
+        .core_clk                     (clk),
+        .core_aresetn                 (rst_n),
+        .tx_m_axis_tready_send_tst    (1'b1),
+        .tx_m_axis_tdata_send_test    (resp_tx_tdata),
+        .tx_m_axis_tkeep_send_test    (resp_tx_tkeep),
+        .tx_m_axis_tvalid_send_test   (resp_tx_tvalid),
+        .tx_m_axis_tlast_send_test    (resp_tx_tlast),
+        .conf_of_reg_done             (conf_of_reg_done),
+
+        .MAC_SRC_ADDR_LSB             (32'h17dc5e9a),
+        .MAC_SRC_ADDR_MSB             (32'h00002f76),
+        // Wire QP3 with same params as QP2 so responder's initial WRITE
+        // phase (which targets QP3 first) generates valid packets
+        .IP4H_QP3_SRC_ADDR_1          (32'hf38590ba),
+        .IP4H_QP3_DEST_ADDR_1         (32'h610c6007),
+        .QP3_MAC_DEST_ADDR_LSB        (32'h50560f2e),
+        .QP3_MAC_DEST_ADDR_MSB        (32'h000016c4),
+        .QP3_PSN                      (32'h00004470),
+
+        .QP2_MAC_DEST_ADDR_LSB        (32'h50560f2e),
+        .QP2_MAC_DEST_ADDR_MSB        (32'h000016c4),
+        .IP4H_QP2_DEST_ADDR_1         (32'h610c6007),
+        .IP4H_QP2_SRC_ADDR_1          (32'hf38590ba),
+        .QP2_PSN                      (32'h00774470),
+
+        .QP4_MAC_DEST_ADDR_LSB        (32'h00000000),
+        .QP4_MAC_DEST_ADDR_MSB        (32'h00000000),
+        .IP4H_QP4_DEST_ADDR_1         (32'h00000000),
+        .QP4_PSN                      (32'h00000000),
+
+        .QP5_MAC_DEST_ADDR_LSB        (32'h00000000),
+        .QP5_MAC_DEST_ADDR_MSB        (32'h00000000),
+        .IP4H_QP5_DEST_ADDR_1         (32'h00000000),
+        .QP5_PSN                      (32'h00000000),
+
+        .QP6_MAC_DEST_ADDR_LSB        (32'h00000000),
+        .QP6_MAC_DEST_ADDR_MSB        (32'h00000000),
+        .IP4H_QP6_DEST_ADDR_1         (32'h00000000),
+        .QP6_PSN                      (32'h00000000),
+
+        .QP7_MAC_DEST_ADDR_LSB        (32'h00000000),
+        .QP7_MAC_DEST_ADDR_MSB        (32'h00000000),
+        .IP4H_QP7_DEST_ADDR_1         (32'h00000000),
+        .QP7_PSN                      (32'h00000000),
+
+        .wqe_proc_top_m_axis_tdata    (net_tx.tdata),
+        .wqe_proc_top_m_axis_tvalid   (net_tx.tvalid),
+        .wqe_proc_top_m_axis_tlast    (net_tx.tlast),
+        .write_pkt_psn                (),
+        .post_rdma_rd_wqe             (resp_post_rd),
+        .post_rdma_wr_wqe             (resp_post_wr),
+        .rdma_write_path_done         (),
+        .rdma_read_path_done          (),
+        .rdma_write_test_done_i       (),
+        .rdma_rdrq_test_done_i        (),
+        .RDMA_SND_TST_DONE            (resp_rdma_snd_done)
+    );
+
+    // ----------------------------------------------------------------
+    // RX path: loopback OR responder response
+    // ----------------------------------------------------------------
+    assign net_rx.tvalid = resp_tx_tvalid ? resp_tx_tvalid : net_tx.tvalid;
+    assign net_rx.tdata  = resp_tx_tvalid ? resp_tx_tdata  : net_tx.tdata;
+    assign net_rx.tkeep  = resp_tx_tvalid ? resp_tx_tkeep  : net_tx.tkeep;
+    assign net_rx.tlast  = resp_tx_tvalid ? resp_tx_tlast  : net_tx.tlast;
     assign net_rx.tuser  = 1'b0;
 
     // ERNIC system_resetn — pull up (output may be open-drain)

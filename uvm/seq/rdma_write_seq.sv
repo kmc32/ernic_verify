@@ -30,19 +30,18 @@ typedef struct packed {
 class rdma_write_seq extends ernic_base_seq;
     `uvm_object_utils(rdma_write_seq)
 
-    int unsigned qpn          = 2;   // 1-based QP number (QP2 = first RC QP)
+    int unsigned qpn          = 2;
     longint unsigned sq_addr  = 64'h1000_0000;
     longint unsigned local_addr;
-    bit [31:0]       rkey     = 32'h1;  // Remote Key (RTAG)
+    bit [31:0]       rkey     = 32'h1;
     longint unsigned remote_addr;
     int unsigned     length   = 64;
     bit              with_imm = 0;
     bit [31:0]       imm_data = 0;
+    bit              skip_wqe = 0;  // skip backdoor WQE write
 
-    // AXI4 mem model handle for WQE backdoor write
     axi4_mem_model mem_model;
 
-    // Track producer index per QP
     static bit [15:0] sq_pi[longint unsigned];
 
     function new(string name = "rdma_write_seq");
@@ -54,26 +53,25 @@ class rdma_write_seq extends ernic_base_seq;
         byte unsigned wqe_bytes[];
         bit [15:0] pi;
 
-        // Build WQE. Mixed-endian layout (per Xilinx ref design):
-        //   - LADDR and LENGTH are numeric DMA parameters → store native LE
-        //     so axi_data[X] reads back the original numeric value
-        //   - ROFFSET / RTAG / IMMDT are copied straight to RoCE header bytes →
-        //     store byte-reversed so wire byte 0 == high byte of value
-        //   - OPCODE is 1 byte, order N/A
-        // The whole struct is then dumped to memory with {<<byte{}} (AXI4 LE).
+        // Build WQE — fields stored per Xilinx ERNIC reference design:
+        // - LADDR/LENGTH are DMA parameters, stored native LE
+        // - RTAG/ROFFSET go into RoCE header, stored byte-reversed via {<<8{}}
+        // - OPCODE is single byte
+        // Full struct serialized to memory via {<<byte{}} for AXI4 LE
         wqe = '0;
         wqe.wrid       = 16'h0;
         wqe.opcode     = `WQE_OP_RDMA_WRITE;
         wqe.rtag       = {<<8{rkey}};
         wqe.roffset    = {<<8{remote_addr}};
         wqe.laddr      = local_addr;
-        wqe.length     = length;  // native LE
-        wqe.sdata      = 128'hAABBCCDD_00112233_44556677_8899AABB;
+        wqe.length     = length;
+        wqe.sdata      = 128'h0;
         wqe.immdt_data = 32'h0;
         wqe_bytes = {<<byte{wqe}};
-        mem_model.backdoor_write(sq_addr, wqe_bytes);
+        if (!skip_wqe)
+            mem_model.backdoor_write(sq_addr, wqe_bytes);
 
-        // Ring doorbell: increment SQ Producer Index and write to SQPI register
+        // Ring doorbell
         if (!sq_pi.exists(qpn)) sq_pi[qpn] = 16'h0;
         pi = sq_pi[qpn] + 16'h1;
         sq_pi[qpn] = pi;

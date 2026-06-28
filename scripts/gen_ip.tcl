@@ -32,6 +32,9 @@ create_ip -name ernic -vendor xilinx.com -library ip -version 4.0 -module_name $
 set_property -dict [list \
     CONFIG.C_NUM_QP                {8}   \
     CONFIG.C_S_AXI_LITE_ADDR_WIDTH {32}  \
+    CONFIG.C_EN_NVMOF_HW_HNDSHK    {1}   \
+    CONFIG.C_EN_INITIATOR_LITE     {1}   \
+    CONFIG.C_EN_IETH_IMMDT         {1}   \
 ] [get_ips $IP_NAME]
 
 generate_target simulation [get_ips $IP_NAME]

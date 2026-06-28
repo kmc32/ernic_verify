@@ -163,7 +163,9 @@ $(SIMV): $(ERNIC_LIB)/.done $(PTHREAD_STUB) $(UVM_DPI_LIB)
 	# Compile UVM package first (required by tb_top)
 	$(VLOGAN) -work work -full64 -sverilog \
 	    +incdir+$(UVM_HOME)/src +incdir+$(UVM_HOME) \
+	    +incdir+build/example_design/ernic_v4_0_ex/imports \
 	    +define+UVM_NO_DEPRECATED -timescale=1ns/1ps \
+	    tb/responder.v \
 	    $(UVM_HOME)/src/uvm_pkg.sv \
 	    -l $(VLOGAN_LOG) 2>&1 | tee -a $(VLOGAN_LOG)
 	# Compile tb_top with UVM support
@@ -171,7 +173,9 @@ $(SIMV): $(ERNIC_LIB)/.done $(PTHREAD_STUB) $(UVM_DPI_LIB)
 	    +incdir+$(UVM_HOME)/src +incdir+$(UVM_HOME) +incdir+. \
 	    +incdir+$(VIVADO_VIP)/include +incdir+$(VIVADO_VIP)/hdl \
 	    +incdir+$(IPGEN)/sources_1/ip/ernic_v4_0/hdl/common \
+	    +incdir+build/example_design/ernic_v4_0_ex/imports \
 	    +define+UVM_NO_DEPRECATED -timescale=1ns/1ps \
+	    tb/responder.v \
 	    tb/tb_top.sv \
 	    -l $(VLOGAN_LOG) 2>&1 | tee -a $(VLOGAN_LOG)
 	@echo "[VCS] Elaborating all libraries..."

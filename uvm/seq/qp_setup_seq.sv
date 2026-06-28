@@ -19,11 +19,11 @@ class qp_setup_seq extends ernic_base_seq;
     // Doorbell addresses — ERNIC writes CQ head / RQ write ptr here
     longint unsigned cq_db_addr     = 64'hA000_0000;
     longint unsigned rq_wptr_db_addr = 64'hA000_1000;
-    // Queue depths
-    int unsigned   sq_depth = 128;
-    int unsigned   rq_depth = 128;
-    // RQ buffer size in multiples of 256B
-    int unsigned   rq_buf_size = 64;      // 64 * 256B = 16KB per RQ element
+    // Queue depths — matching example design QP2: SQ=256, RQ=64
+    int unsigned   sq_depth = 256;
+    int unsigned   rq_depth = 64;
+    // RQ buffer size in multiples of 256B — matching example QPCONF[31:16]=0x4f8
+    int unsigned   rq_buf_size = 1272;    // 1272 * 256B = ~325KB per RQ element
 
     function new(string name = "qp_setup_seq");
         super.new(name);
@@ -122,8 +122,9 @@ class qp_setup_seq extends ernic_base_seq;
         //    [4]     = 1 (HW handshake DISABLE — AXI-Lite doorbell, no PIDB needed)
         //    [3]     = 0 (CQ int enable)
         //    [2]     = 0 (RQ int enable)
+        //    [1]     = 1 (SQ int enable / example design matches)
         //    [0]     = 1 (QP enable)
-        qpconf_val = {rq_buf_size[15:0], 5'h0, `PMTU_256B, 4'h4, 3'b000, 1'b1};
+        qpconf_val = {rq_buf_size[15:0], 5'h0, `PMTU_256B, 4'h4, 3'b001, 1'b1};
         csr_write(qp_base + `ERNIC_QP_QPCONF, qpconf_val);
 
         // 9. Write retry data buffer config (matching example design 0x0c000000)
@@ -139,6 +140,9 @@ class qp_setup_seq extends ernic_base_seq;
         // 11. Enable ERNIC globally (XRNICCONF[0]=1, UDP src port=0x4791)
         // 32-bit value: 8+16+5+2+1 = 32 bits — bit[0]=1 enable, [23:8]=UDP src port
         csr_write(`ERNIC_XRNICCONF, {8'h0, 16'h4791, 5'h0, 2'b00, 1'b1});
+
+        // 11a. Interrupt Enable (matching example design 0x100180 = 0x70)
+        csr_write(32'h10_0180, 32'h0000_0070);
 
         // 12. Final commit triggers — ERNIC latches configuration after these writes
         csr_write(32'h00100044, 32'h00000007);

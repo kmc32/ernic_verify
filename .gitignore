@@ -17,6 +17,9 @@ vivado*.log
 .log
 *.pdf
 tr_db.log
+run_exdes_xsim.tcl
+gen_exdes.tcl
+run_exdes*
 
 # Simulations
 ucli.key
