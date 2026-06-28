@@ -166,6 +166,11 @@ $(SIMV): $(ERNIC_LIB)/.done $(PTHREAD_STUB) $(UVM_DPI_LIB)
 	    +incdir+build/example_design/ernic_v4_0_ex/imports \
 	    +define+UVM_NO_DEPRECATED -timescale=1ns/1ps \
 	    tb/responder.v \
+		    build/example_design/ernic_v4_0_ex/imports/ernic_v4_0_rnic_exdes_icrc_calc.v \
+		    build/example_design/ernic_v4_0_ex/imports/ernic_v4_0_rnic_exdes_crc32_8b.v \
+		    build/example_design/ernic_v4_0_ex/imports/ernic_v4_0_rnic_exdes_crc32_zero_extnd.v \
+		    build/example_design/ernic_v4_0_ex/imports/ernic_v4_0_rnic_exdes_wqe_proc_crc_wrap.v \
+		    build/example_design/ernic_v4_0_ex/imports/ernic_v4_0_RDMA_pkt_filter.v \
 	    $(UVM_HOME)/src/uvm_pkg.sv \
 	    -l $(VLOGAN_LOG) 2>&1 | tee -a $(VLOGAN_LOG)
 	# Compile tb_top with UVM support
@@ -176,6 +181,11 @@ $(SIMV): $(ERNIC_LIB)/.done $(PTHREAD_STUB) $(UVM_DPI_LIB)
 	    +incdir+build/example_design/ernic_v4_0_ex/imports \
 	    +define+UVM_NO_DEPRECATED -timescale=1ns/1ps \
 	    tb/responder.v \
+		    build/example_design/ernic_v4_0_ex/imports/ernic_v4_0_rnic_exdes_icrc_calc.v \
+		    build/example_design/ernic_v4_0_ex/imports/ernic_v4_0_rnic_exdes_crc32_8b.v \
+		    build/example_design/ernic_v4_0_ex/imports/ernic_v4_0_rnic_exdes_crc32_zero_extnd.v \
+		    build/example_design/ernic_v4_0_ex/imports/ernic_v4_0_rnic_exdes_wqe_proc_crc_wrap.v \
+		    build/example_design/ernic_v4_0_ex/imports/ernic_v4_0_RDMA_pkt_filter.v \
 	    tb/tb_top.sv \
 	    -l $(VLOGAN_LOG) 2>&1 | tee -a $(VLOGAN_LOG)
 	@echo "[VCS] Elaborating all libraries..."

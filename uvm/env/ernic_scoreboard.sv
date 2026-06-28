@@ -56,7 +56,13 @@ class ernic_scoreboard extends uvm_scoreboard;
             fail_cnt++;
             return;
         end
-        `uvm_info("SB", $sformatf("RoCEv2 pkt OK len=%0d", item.data.size()), UVM_HIGH)
+        `uvm_info("SB", $sformatf("RoCEv2 pkt OK len=%0d", item.data.size()), UVM_NONE)
+        // Always dump last 64 bytes (payload) to identify which QP's data
+        begin
+            int start = (item.data.size() > 64) ? item.data.size() - 64 : 0;
+            `uvm_info("SB", $sformatf("Payload bytes %0d-%0d:", start, item.data.size()-1), UVM_NONE)
+            dump_pkt_hex(item.data, item.data.size());
+        end
         pass_cnt++;
     endfunction
 

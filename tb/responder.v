@@ -199,10 +199,9 @@ always @(posedge core_clk or negedge core_aresetn) begin
             TX_AXIS_PKT_GEN_ST0: begin
                                 //if (rdma_rdrq_test_done_i == 1'b1 && conf_of_reg_done == 1'b1) begin
                               //  if ( conf_of_reg_done == 1'b1) begin
-                                   // MODIFIED: target QP2 with ERNIC self-MAC for loopback
-                                   // Dest MAC = ERNIC global MAC (0x00002f76_17dc5e9a) for MAC filter accept
+                                   // EXACT example design format — target QP3 with original params
                                    if (conf_of_reg_done == 1'b1 && pkt_sent_cnt < 4'h8) begin
-                                   in_hdr_in <= {MAC_SRC_ADDR_MSB[15:0],MAC_SRC_ADDR_LSB, MAC_SRC_ADDR_MSB[15:0],MAC_SRC_ADDR_LSB, Protocol_ID,8'h45,8'hb8,Total_len_write,16'h5555,16'h4000,8'hba,UDP_Protocol_ID,chk_sum_calc({8'h45,8'hb8,Total_len_write,16'h5555,16'h4000,8'hba,UDP_Protocol_ID,IP4H_QP2_DEST_ADDR_1,IP4H_QP2_SRC_ADDR_1}),IP4H_QP2_DEST_ADDR_1,IP4H_QP2_SRC_ADDR_1,16'h6851,16'h12b7,UDP_Len_write,16'h0000,8'h0a,8'h30,16'h666f,24'h050000,16'h0200,QP2_PSN[23:8],(QP2_PSN[7:0]+pkt_sent_cnt + 1'b1), 32'h00000000, 32'hcad53074, 16'h0000 };
+                                   in_hdr_in <= {MAC_SRC_ADDR_MSB[15:0],MAC_SRC_ADDR_LSB, QP3_MAC_DEST_ADDR_MSB[15:0],QP3_MAC_DEST_ADDR_LSB, Protocol_ID,8'h45,8'hb8,Total_len_write,16'h5555,16'h4000,8'hba,UDP_Protocol_ID,chk_sum_calc({8'h45,8'hb8,Total_len_write,16'h5555,16'h4000,8'hba,UDP_Protocol_ID,IP4H_QP3_DEST_ADDR_1,IP4H_QP3_SRC_ADDR_1}),IP4H_QP3_DEST_ADDR_1,IP4H_QP3_SRC_ADDR_1,16'h6851,16'h12b7,UDP_Len_write,16'h0000,8'h0a,8'h30,16'h666f,24'h050000,16'h0300,QP3_PSN[23:8],(QP3_PSN[7:0]+pkt_sent_cnt + 1'b1), 32'h00000000, 32'hcad53074, 16'h0000 };
                                    pkt_sent_QP3 <= pkt_sent_QP3 + 1'b1;
                              //   end
                                   end 

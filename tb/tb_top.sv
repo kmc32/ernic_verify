@@ -468,8 +468,16 @@ module tb_top;
     int tx_beat_n = 0;
     always @(posedge clk) begin
         if (net_tx.tvalid && net_tx.tready) begin
-            $display("[%0t] TX_BEAT%0d tlast=%0b tkeep=0x%016h",
-                     $time, tx_beat_n, net_tx.tlast, net_tx.tkeep);
+            // Print first 32 bytes (256b) of each beat as 16-bit hex words
+            $display("[%0t] TX_BEAT%0d tlast=%0b tkeep=0x%016h", $time, tx_beat_n, net_tx.tlast, net_tx.tkeep);
+            for (int b = 0; b < 64; b += 16) begin
+                $display("       bytes %02d-%02d: %04h %04h %04h %04h %04h %04h %04h %04h",
+                         b, b+15,
+                         net_tx.tdata[b*8 +: 16], net_tx.tdata[b*8+16 +: 16],
+                         net_tx.tdata[b*8+32 +: 16], net_tx.tdata[b*8+48 +: 16],
+                         net_tx.tdata[b*8+64 +: 16], net_tx.tdata[b*8+80 +: 16],
+                         net_tx.tdata[b*8+96 +: 16], net_tx.tdata[b*8+112 +: 16]);
+            end
             tx_beat_n = net_tx.tlast ? 0 : tx_beat_n + 1;
         end
         if (pidb_valid && pidb_rdy)
@@ -518,6 +526,10 @@ module tb_top;
     wire         resp_tx_tvalid, resp_tx_tlast;
     wire         resp_post_wr, resp_post_rd;
     wire         resp_rdma_snd_done;
+    // Filtered responder output (after CRC + RDMA filter)
+    wire [511:0] resp_filtered_tdata;
+    wire [63:0]  resp_filtered_tkeep;
+    wire         resp_filtered_tvalid, resp_filtered_tlast;
 
     // Debug: print responder activity
     always @(posedge clk) begin
@@ -545,13 +557,12 @@ module tb_top;
 
         .MAC_SRC_ADDR_LSB             (32'h17dc5e9a),
         .MAC_SRC_ADDR_MSB             (32'h00002f76),
-        // Wire QP3 with same params as QP2 so responder's initial WRITE
-        // phase (which targets QP3 first) generates valid packets
+        // QP3 params from example design (XRNIC_Reg_Config.vh)
         .IP4H_QP3_SRC_ADDR_1          (32'hf38590ba),
-        .IP4H_QP3_DEST_ADDR_1         (32'h610c6007),
-        .QP3_MAC_DEST_ADDR_LSB        (32'h50560f2e),
-        .QP3_MAC_DEST_ADDR_MSB        (32'h000016c4),
-        .QP3_PSN                      (32'h00004470),
+        .IP4H_QP3_DEST_ADDR_1         (32'hd7ac977e),
+        .QP3_MAC_DEST_ADDR_LSB        (32'h1c69b8ed),
+        .QP3_MAC_DEST_ADDR_MSB        (32'h0000ea1e),
+        .QP3_PSN                      (32'h00e21df7),
 
         .QP2_MAC_DEST_ADDR_LSB        (32'h50560f2e),
         .QP2_MAC_DEST_ADDR_MSB        (32'h000016c4),
@@ -593,12 +604,66 @@ module tb_top;
     );
 
     // ----------------------------------------------------------------
-    // RX path: loopback OR responder response
+    // RX path: responder → CRC wrapper → RDMA filter → ERNIC RX
+    //          OR TX loopback → ERNIC RX (for ACK/READ_RESP)
+    // Matching example design architecture (exdes_top.v)
     // ----------------------------------------------------------------
-    assign net_rx.tvalid = resp_tx_tvalid ? resp_tx_tvalid : net_tx.tvalid;
-    assign net_rx.tdata  = resp_tx_tvalid ? resp_tx_tdata  : net_tx.tdata;
-    assign net_rx.tkeep  = resp_tx_tvalid ? resp_tx_tkeep  : net_tx.tkeep;
-    assign net_rx.tlast  = resp_tx_tvalid ? resp_tx_tlast  : net_tx.tlast;
+    wire [511:0] crc_m_axis_tdata;
+    wire [63:0]  crc_m_axis_tkeep;
+    wire         crc_m_axis_tvalid, crc_m_axis_tlast;
+    wire         crc_s_axis_tready;
+
+    // CRC wrapper — appends ICRC to responder packets (required by ERNIC)
+    // NOTE: core_rst is active-HIGH, our rst_n is active-LOW
+    exdes_crc_wrap crc_wrap_inst (
+        .core_clk        (clk),
+        .core_rst        (~rst_n),
+        .s_axis_tdata    (resp_tx_tdata),
+        .s_axis_tkeep    (resp_tx_tkeep),
+        .s_axis_tvalid   (resp_tx_tvalid),
+        .s_axis_tlast    (resp_tx_tlast),
+        .s_axis_tready   (crc_s_axis_tready),
+        .m_axis_tdata    (crc_m_axis_tdata),
+        .m_axis_tkeep    (crc_m_axis_tkeep),
+        .m_axis_tvalid   (crc_m_axis_tvalid),
+        .m_axis_tlast    (crc_m_axis_tlast),
+        .m_axis_tready   (1'b1)
+    );
+
+    // Debug: monitor CRC output and filter output
+    always @(posedge clk) begin
+        if (crc_m_axis_tvalid)
+            $display("[%0t] CRC_OUT tlast=%0b tkeep=0x%016h MAC[47:0]=0x%012h (first 6B on wire)", $time, crc_m_axis_tlast, crc_m_axis_tkeep, crc_m_axis_tdata[47:0]);
+        if (resp_filtered_tvalid)
+            $display("[%0t] FILTER_OUT tlast=%0b tkeep=0x%016h — packet PASSED to ERNIC RX", $time, resp_filtered_tlast, resp_filtered_tkeep);
+    end
+
+    // RDMA packet filter — routes RoCEv2 packets to ERNIC RX
+    RDMA_pkt_filter pkt_filter_inst (
+        .core_clk                     (clk),
+        .core_rst                     (rst_n),
+        .s_axis_tdata                 (crc_m_axis_tdata),
+        .s_axis_tkeep                 (crc_m_axis_tkeep),
+        .s_axis_tlast                 (crc_m_axis_tlast),
+        .s_axis_tuser                 (1'b0),
+        .s_axis_tvalid                (crc_m_axis_tvalid),
+        .dma_m_axis_tdata             (),
+        .dma_m_axis_tkeep             (),
+        .dma_m_axis_tlast             (),
+        .dma_m_axis_tuser             (),
+        .dma_m_axis_tvalid            (),
+        .rx_pkt_hndler_m_axis_tdata   (resp_filtered_tdata),
+        .rx_pkt_hndler_m_axis_tkeep   (resp_filtered_tkeep),
+        .rx_pkt_hndler_m_axis_tlast   (resp_filtered_tlast),
+        .rx_pkt_hndler_m_axis_tuser   (),
+        .rx_pkt_hndler_m_axis_tvalid  (resp_filtered_tvalid)
+    );
+
+    // RX mux: filtered responder packets OR TX loopback
+    assign net_rx.tvalid = resp_filtered_tvalid ? resp_filtered_tvalid : net_tx.tvalid;
+    assign net_rx.tdata  = resp_filtered_tvalid ? resp_filtered_tdata  : net_tx.tdata;
+    assign net_rx.tkeep  = resp_filtered_tvalid ? resp_filtered_tkeep  : net_tx.tkeep;
+    assign net_rx.tlast  = resp_filtered_tvalid ? resp_filtered_tlast  : net_tx.tlast;
     assign net_rx.tuser  = 1'b0;
 
     // ERNIC system_resetn — pull up (output may be open-drain)

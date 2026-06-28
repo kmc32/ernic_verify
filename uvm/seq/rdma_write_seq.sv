@@ -65,7 +65,8 @@ class rdma_write_seq extends ernic_base_seq;
         wqe.roffset    = {<<8{remote_addr}};
         wqe.laddr      = local_addr;
         wqe.length     = length;
-        wqe.sdata      = 128'h0;
+        // Example design WQE sdata = 128'hAABBCCDD_00112233_44556677_8899AABB
+        wqe.sdata      = 128'hAABBCCDD_00112233_44556677_8899AABB;
         wqe.immdt_data = 32'h0;
         wqe_bytes = {<<byte{wqe}};
         if (!skip_wqe)

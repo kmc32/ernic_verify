@@ -61,7 +61,7 @@ class check_regs_seq extends ernic_base_seq;
         check_reg("QP2_QPCONF",      32'h18_0100, 32'h04f80407);
         check_reg("QP2_QPADVCONF",   32'h18_0104, 32'h9bf1b002);
         check_reg("QP2_QDEPTH",      32'h18_013C, 32'h00400100);
-        check_reg("QP2_SQPSN",       32'h18_0140, 32'h00774471);  // PSN increments after WQE consumed
+        check_reg("QP2_SQPSN",       32'h18_0140, 32'h00774470);
         check_reg("QP2_LSTRQREQ",    32'h18_0144, 32'h04a02aa9);
         check_reg("QP2_DESTQPCONF",  32'h18_0148, 32'h00000002);
         check_reg("QP2_TIMEOUTCONF", 32'h18_014C, 32'h00020b18);
