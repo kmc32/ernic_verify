@@ -1,27 +1,32 @@
-# Simulation output
-simv
-simv.daidir/
-csrc/
-sim/
-*.log
-*.vpd
-ucli.key
-*.jou
-*.pb
+# Build artifacts
+build/
 
-# Vivado
+# VCS runtime artifacts (generated in CWD, cannot redirect)
+AN.DB/
+64/
+vc_hdrs.h
+
+# Vivado logs (generated in CWD)
+vivado*.jou
+vivado*.log
 *.backup.jou
 *.backup.log
+*.str
+*.pb
 .jou
 .log
-*.str
 
-# OS
+# Simulations
+ucli.key
+
+# IDE / OS
 .DS_Store
 *.swp
 *.swo
 *~
-
-# IDE
 .vscode/
 .idea/
+.claude/
+.gen/
+.srcs/
+.Xil/

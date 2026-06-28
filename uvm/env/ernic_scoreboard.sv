@@ -1,5 +1,6 @@
 // ERNIC scoreboard — checks TX packets carry correct RoCEv2 headers
 // and verifies completion entries in CQ memory
+`uvm_analysis_imp_decl(_csr)
 class ernic_scoreboard extends uvm_scoreboard;
     `uvm_component_utils(ernic_scoreboard)
 

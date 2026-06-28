@@ -14,10 +14,10 @@ class ernic_reliable_transport_test extends ernic_base_test;
         // Issue NUM_PKTS RDMA Writes in sequence, each with different data
         for (int i = 0; i < NUM_PKTS; i++) begin
             rdma_write_seq seq = rdma_write_seq::type_id::create($sformatf("seq%0d", i));
-            byte unsigned buf[];
-            buf = new[64];
-            foreach (buf[j]) buf[j] = i * 64 + j;
-            env.mem.backdoor_write(64'h6000_0000 + i*64, buf);
+            byte unsigned data_buf[];
+            data_buf = new[64];
+            foreach (data_buf[j]) data_buf[j] = i * 64 + j;
+            env.mem.backdoor_write(64'h6000_0000 + i*64, data_buf);
 
             seq.qpn         = 0;
             seq.sq_addr     = 64'h1000_0000 + i*64;

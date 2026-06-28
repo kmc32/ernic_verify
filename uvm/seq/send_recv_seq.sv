@@ -1,5 +1,5 @@
 // Send/Receive sequence
-`include "ernic_csr.svh"
+`include "uvm/seq/ernic_csr.svh"
 
 typedef struct packed {
     bit [7:0]  opcode;

@@ -23,7 +23,7 @@ class axis_monitor extends uvm_monitor;
             axis_item item = axis_item::type_id::create("item");
             item.data = new[0];
             do begin
-                @(vif.slave_cb iff vif.slave_cb.tvalid && vif.slave_cb.tready);
+                @(vif.slave_cb iff vif.slave_cb.tvalid && vif.tready);
                 for (int k = 0; k < BYTES; k++)
                     if (vif.slave_cb.tkeep[k]) begin
                         item.data = new[item.data.size()+1](item.data);

@@ -1,5 +1,5 @@
 // QP setup sequence — configures one QP via AXI-Lite CSR
-`include "ernic_csr.svh"
+`include "uvm/seq/ernic_csr.svh"
 
 class qp_setup_seq extends ernic_base_seq;
     `uvm_object_utils(qp_setup_seq)

@@ -1,0 +1,10 @@
+WORK > DEFAULT
+work : ./build/vcs_lib/work
+xilinx_vip : ./build/vcs_lib/xilinx_vip
+xpm : ./build/vcs_lib/xpm
+blk_mem_gen_v8_4_5 : ./build/vcs_lib/blk_mem_gen_v8_4_5
+lib_bmg_v1_0_14 : ./build/vcs_lib/lib_bmg_v1_0_14
+fifo_generator_v13_2_7 : ./build/vcs_lib/fifo_generator_v13_2_7
+lib_fifo_v1_0_16 : ./build/vcs_lib/lib_fifo_v1_0_16
+ernic_v4_0_0 : ./build/vcs_lib/ernic_v4_0_0
+xil_defaultlib : ./build/vcs_lib/xil_defaultlib

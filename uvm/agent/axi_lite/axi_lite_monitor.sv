@@ -22,23 +22,23 @@ class axi_lite_monitor extends uvm_monitor;
             // Detect write vs read
             fork
                 begin : wr
-                    @(vif.slave_cb iff vif.slave_cb.awvalid && vif.slave_cb.awready);
+                    @(vif.slave_cb iff vif.slave_cb.awvalid && vif.awready);
                     item.kind = axi_lite_item::WRITE;
                     item.addr = vif.slave_cb.awaddr;
-                    @(vif.slave_cb iff vif.slave_cb.wvalid && vif.slave_cb.wready);
+                    @(vif.slave_cb iff vif.slave_cb.wvalid && vif.wready);
                     item.data = vif.slave_cb.wdata;
                     item.strb = vif.slave_cb.wstrb;
-                    @(vif.slave_cb iff vif.slave_cb.bvalid && vif.slave_cb.bready);
-                    item.resp = vif.slave_cb.bresp;
+                    @(vif.slave_cb iff vif.bvalid && vif.slave_cb.bready);
+                    item.resp = vif.bresp;
                     disable rd;
                 end
                 begin : rd
-                    @(vif.slave_cb iff vif.slave_cb.arvalid && vif.slave_cb.arready);
+                    @(vif.slave_cb iff vif.slave_cb.arvalid && vif.arready);
                     item.kind = axi_lite_item::READ;
                     item.addr = vif.slave_cb.araddr;
-                    @(vif.slave_cb iff vif.slave_cb.rvalid && vif.slave_cb.rready);
-                    item.rdata = vif.slave_cb.rdata;
-                    item.resp  = vif.slave_cb.rresp;
+                    @(vif.slave_cb iff vif.rvalid && vif.slave_cb.rready);
+                    item.rdata = vif.rdata;
+                    item.resp  = vif.rresp;
                     disable wr;
                 end
             join_any

@@ -1,5 +1,5 @@
 // RDMA Write sequence — posts a WQE to the SQ and rings doorbell
-`include "ernic_csr.svh"
+`include "uvm/seq/ernic_csr.svh"
 
 // WQE layout for RDMA Write (64 bytes)
 typedef struct packed {
@@ -12,7 +12,7 @@ typedef struct packed {
     bit [63:0] remote_addr;
     bit [31:0] remote_key;
     bit [31:0] imm_data;
-    bit [7:0]  pad[16]; // padding to 64 bytes
+    bit [127:0] pad; // padding to 64 bytes
 } wqe_rdma_write_t;
 
 class rdma_write_seq extends ernic_base_seq;
