@@ -63,7 +63,7 @@ class rdma_write_seq extends ernic_base_seq;
         // The whole struct is then dumped to memory with {<<byte{}} (AXI4 LE).
         wqe = '0;
         wqe.wrid       = 16'h0;
-        wqe.opcode     = `WQE_OP_SEND;
+        wqe.opcode     = `WQE_OP_RDMA_WRITE;
         wqe.rtag       = {<<8{rkey}};
         wqe.roffset    = {<<8{remote_addr}};
         wqe.laddr      = local_addr;

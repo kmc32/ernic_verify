@@ -8,6 +8,8 @@ VCS     ?= vcs
 
 UVM_HOME    ?= /home/harry/synopsys/vcs-mx/O-2018.09-SP2/etc/uvm-1.2
 VCS_HOME    := $(abspath $(UVM_HOME)/../..)
+VERDI_HOME  ?= /home/harry/synopsys/verdi/Verdi_O-2018.09-SP2
+VERDI_PLI_DIR := $(VERDI_HOME)/share/PLI/VCS/LINUX64
 
 BUILD_DIR   := build
 VCS_LIB     := $(BUILD_DIR)/vcs_lib
@@ -173,10 +175,11 @@ $(SIMV): $(ERNIC_LIB)/.done $(PTHREAD_STUB) $(UVM_DPI_LIB)
 	    tb/tb_top.sv \
 	    -l $(VLOGAN_LOG) 2>&1 | tee -a $(VLOGAN_LOG)
 	@echo "[VCS] Elaborating all libraries..."
-	# Pure elaboration: resolve from pre-compiled libs, link with UVM DPI
+	# Pure elaboration: resolve from pre-compiled libs, link with UVM DPI + Verdi FSDB
 	$(VCS_ELAB) -full64 -debug_acc+pp+dmptf \
+	    -P $(VERDI_PLI_DIR)/novas.tab \
 	    -Mdir=$(BUILD_DIR)/csrc \
-	    -LDFLAGS "-Wl,-rpath,$(CURDIR)/$(BUILD_DIR) -L$(CURDIR)/$(BUILD_DIR) -l:pthread_yield_stub.so -l:libuvm_dpi.so" \
+	    -LDFLAGS "-Wl,-rpath,$(CURDIR)/$(BUILD_DIR) -Wl,-rpath,$(VERDI_PLI_DIR) -L$(CURDIR)/$(BUILD_DIR) -L$(VERDI_PLI_DIR) -l:pthread_yield_stub.so -l:libuvm_dpi.so" \
 	    xil_defaultlib.ernic_v4_0 work.tb_top xil_defaultlib.glbl \
 	    -l $(ELAB_LOG) \
 	    -o $(SIMV) 2>&1 | tee $(ELAB_LOG)

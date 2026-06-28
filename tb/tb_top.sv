@@ -39,6 +39,11 @@ module tb_top;
     logic rst_n = 0;
     always #5 clk = ~clk;   // 100 MHz
     initial begin
+        automatic string test_name;
+        if (!$value$plusargs("UVM_TESTNAME=%s", test_name))
+            test_name = "unknown_test";
+        $fsdbDumpfile($sformatf("build/%s.fsdb", test_name));
+        $fsdbDumpvars(0, tb_top);
         #100 rst_n = 1;
     end
 
@@ -466,6 +471,14 @@ module tb_top;
             $display("[%0t] PIDB_FIRE addr=0x%08h data=0x%04h", $time, pidb_wr_addr, pidb_hndshk);
         if (dbg_cq_db_cnt_valid)
             $display("[%0t] CQ_DB cnt_valid", $time);
+    end
+
+    // Extra TX probe: log any tvalid assertion (even without tready)
+    always @(posedge clk) begin
+        if (net_tx.tvalid !== 1'b0)
+            $display("[%0t] TX_TVALID = %b (tready=%b)", $time, net_tx.tvalid, net_tx.tready);
+        if (dbg_ieth_tvalid !== 1'b0)
+            $display("[%0t] IETH_TVALID = %b", $time, dbg_ieth_tvalid);
     end
 
     // ----------------------------------------------------------------

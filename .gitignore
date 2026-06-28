@@ -15,6 +15,7 @@ vivado*.log
 *.pb
 .jou
 .log
+*.pdf
 tr_db.log
 
 # Simulations
@@ -31,3 +32,6 @@ ucli.key
 .gen/
 .srcs/
 .Xil/
+DVEfiles
+verdiLog
+novas*

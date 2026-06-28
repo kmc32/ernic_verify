@@ -60,6 +60,20 @@ class qp_setup_seq extends ernic_base_seq;
 
         // ---- RC QP Creation (Chapter 6) ----
 
+        // 0. Memory Region configuration (per-QP MR, base = QP index * 0x100)
+        // Required for ERNIC to translate local addresses to physical access
+        begin
+            bit [31:0] mr_base = qpn * 32'h100;  // QPn MR at n*0x100
+            bit [31:0] mr_vaddr  = 32'hcad53074 + qpn * 32'h40000;  // QP0=0xcad53074, QP1=0xcad93074, QP2=0xcadd3074
+            bit [31:0] mr_bufba  = 32'h40000000 + qpn * 32'h40000;  // QP0=0x40000000, QP1=0x40040000, QP2=0x40080000
+            csr_write(mr_base + 32'h00, qpn);                    // PD Number
+            csr_write(mr_base + 32'h04, mr_vaddr);               // Virtual Address LSB
+            csr_write(mr_base + 32'h0c, mr_bufba);               // Buffer Base Address
+            csr_write(mr_base + 32'h14, 32'h00000018);            // Buffer R_Key
+            csr_write(mr_base + 32'h18, 32'h00100000);            // Buffer Length
+            csr_write(mr_base + 32'h1c, 32'h00000002);            // Access Description
+        end
+
         // 1. Queue base addresses
         // SQ base (32B aligned)
         csr_write(qp_base + `ERNIC_QP_SQBA,    sq_addr[31:0]);
@@ -86,37 +100,34 @@ class qp_setup_seq extends ernic_base_seq;
         csr_write(qp_base + `ERNIC_QP_DESTQPCONF,   dst_qpn[23:0]);
         csr_write(qp_base + `ERNIC_QP_IPDESADDR1,   dst_ip);
 
-        // 5. PSN initialization
-        csr_write(qp_base + `ERNIC_QP_SQPSN,    24'h0);
-        csr_write(qp_base + `ERNIC_QP_LSTRQREQ, 32'h0);
+        // 5. PSN initialization (matching example design: non-zero starting PSN)
+        csr_write(qp_base + `ERNIC_QP_SQPSN,    24'h00774470);
+        csr_write(qp_base + `ERNIC_QP_LSTRQREQ, 32'h04a02aa9);
 
         // 5a. Protection Domain number (per-QP, offset 0xB0) — required
         csr_write(qp_base + `ERNIC_QP_PDNUM, 24'h0);
 
-        // 6. Timeout configuration
-        // [5:0]=timeout, [10:8]=max_retry(7), [13:11]=RNR retry(7), [20:16]=RNR timeout(0x12)
-        // 32-bit value: 11+5+3+3+2+6+2 = 32 bits
-        csr_write(qp_base + `ERNIC_QP_TIMEOUTCONF, {11'h0, 5'h12, 3'h7, 3'h7, 2'h0, 6'h12, 2'h0});
+        // 6. Timeout configuration — matching example design 0x00020b18
+        csr_write(qp_base + `ERNIC_QP_TIMEOUTCONF, 32'h00020b18);
 
-        // 7. QP Advanced config — partition key 0xFFFF (default), TTL 64
-        // [15:0]=PKey, [23:16]=TTL, [31:24]=Traffic Class
-        csr_write(qp_base + `ERNIC_QP_QPADVCONF, 32'h0040_FFFF);
+        // 7. QP Advanced config — matching example design 0x9bf1b002
+        csr_write(qp_base + `ERNIC_QP_QPADVCONF, 32'h9bf1b002);
 
-        // 8. Build and write QPCONF:
+        // 8. Build and write QPCONF (matching example design 0x04f80407):
         //    [31:16] = RQ buffer size in 256B multiples
-        //    [10:8]  = PMTU (3-bit field, 011 = 2048B)
+        //    [10:8]  = PMTU (3-bit field; example=0=256B)
         //    [7]     = 0 (IPv4)
-        //    [4]     = 0 (HW handshake enabled)
-        //    [3]     = 1 (CQ int enable)
-        //    [2]     = 1 (RQ int enable)
+        //    [6]     = 0 (QP recovery)
+        //    [5]     = 0 (CQE write enable)
+        //    [4]     = 1 (HW handshake DISABLE — AXI-Lite doorbell, no PIDB needed)
+        //    [3]     = 0 (CQ int enable)
+        //    [2]     = 0 (RQ int enable)
         //    [0]     = 1 (QP enable)
-        // 32-bit value: 16+5+3+4+3+1 = 32 bits
-        qpconf_val = {rq_buf_size[15:0], 5'h0, `PMTU_2048B, 4'h0, 3'b110, 1'b1};
+        qpconf_val = {rq_buf_size[15:0], 5'h0, `PMTU_256B, 4'h4, 3'b000, 1'b1};
         csr_write(qp_base + `ERNIC_QP_QPCONF, qpconf_val);
 
-        // 9. Write retry data buffer config (needed for outgoing WRITE)
-        // DATBUFSZ: [31:16]=buf size in bytes, [15:0]=#bufs — must be >= PMTU
-        csr_write(`ERNIC_DATBUFBA,    32'h8000_0000);  // data buffer base
+        // 9. Write retry data buffer config (matching example design 0x0c000000)
+        csr_write(`ERNIC_DATBUFBA,    32'h0c00_0000);  // data buffer base
         csr_write(`ERNIC_DATBUFBAMSB, 32'h0);
         csr_write(`ERNIC_DATBUFSZ,    {16'd4096, 16'd128});  // 128 buffers x 4KB each
 
